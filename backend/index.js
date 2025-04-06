@@ -24,12 +24,17 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send_message', async ({ content, userId, channelId }) => {
-    const result = await db.query(
-      'INSERT INTO messages (content, user_id, channel_id) VALUES ($1, $2, $3) RETURNING *',
-      [content, userId, channelId]
-    );
-    const message = result.rows[0];
-    io.to(`channel-${channelId}`).emit('new_message', message);
+    try {
+      const result = await db.query(
+        'INSERT INTO messages (content, user_id, channel_id) VALUES ($1, $2, $3) RETURNING *',
+        [content, userId, channelId]
+      );
+      const message = result.rows[0];
+      io.to(`channel-${channelId}`).emit('new_message', message);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      socket.emit('error', { message: 'Failed to send message' });
+    }
   });
 
   socket.on('disconnect', () => {
