@@ -1,22 +1,42 @@
 import { useEffect, useState } from 'react';
-import { getChannels, createChannel } from './api'; // Add the API call for creating channels
+import { getChannels, createChannel } from './api';
 import ChatRoom from './ChatRoom';
-import socket from './socket'; // Import the singleton socket instance
+import { initSocket, getSocket } from './socket';
+import AuthForms from './components/AuthForms';
+import { useAuth } from './context/AuthContext';
 
 export default function App() {
-  const [channels, setChannels] = useState([]);
+  const { user, logout } = useAuth();
+  const [textChannels, setTextChannels] = useState([]);
+  const [voiceChannels, setVoiceChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
   const [newChannelName, setNewChannelName] = useState('');
-  const [showForm, setShowForm] = useState(false); // To control form visibility
-  const [isConnected, setIsConnected] = useState(false); // Connection status
+  const [showForm, setShowForm] = useState(false);
+  const [newChannelType, setNewChannelType] = useState('text');
+  const [isConnected, setIsConnected] = useState(false);
+  const [activeTab, setActiveTab] = useState('friends');
+
+  // If not authenticated, show auth forms
+  if (!user) {
+    return <AuthForms />;
+  }
 
   // Fetch channels on initial load
   useEffect(() => {
-    getChannels().then((res) => setChannels(res.data));
+    Promise.all([
+      getChannels('text'),
+      getChannels('voice')
+    ]).then(([textRes, voiceRes]) => {
+      setTextChannels(textRes.data);
+      setVoiceChannels(voiceRes.data);
+    });
   }, []);
 
   // Set up WebSocket connections
   useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
     socket.on('connect', () => {
       console.log('Connected to server');
       setIsConnected(true);
@@ -27,9 +47,12 @@ export default function App() {
       setIsConnected(false);
     });
 
-    // Handle incoming new channel event
     socket.on('new_channel', (channel) => {
-      setChannels((prev) => [...prev, channel]);
+      if (channel.type === 'text') {
+        setTextChannels(prev => [...prev, channel]);
+      } else if (channel.type === 'voice') {
+        setVoiceChannels(prev => [...prev, channel]);
+      }
     });
 
     return () => {
@@ -39,16 +62,12 @@ export default function App() {
     };
   }, []);
 
-  // Handle creating a new channel
   const handleCreateChannel = async () => {
     if (!newChannelName.trim()) return;
     try {
-      // Create the new channel
-      const channel = await createChannel(newChannelName.trim());
-      // Emit the new channel to other clients via WebSocket
-      socket.emit('new_channel', channel);
+      await createChannel(newChannelName.trim(), newChannelType);
       setNewChannelName('');
-      setShowForm(false); // Close the form after creating the channel
+      setShowForm(false);
     } catch (err) {
       console.error('Error creating channel', err);
     }
@@ -56,65 +75,146 @@ export default function App() {
 
   return (
     <div className="p-4 text-white bg-gray-900 min-h-screen relative">
-      {/* Connection Status Indicator */}
-      <div
-        className={`absolute top-4 right-4 px-4 py-2 rounded ${
-          isConnected ? 'bg-green-500' : 'bg-red-500'
-        }`}
-      >
-        {isConnected ? 'Connected' : 'Disconnected'}
-      </div>
-
-      <h1 className="text-3xl font-bold mb-4">Discord (real)</h1>
-      <div className="flex">
-        {/* Channel List */}
-        <div className="w-1/4">
-          <h2 className="text-xl font-semibold mb-2">Channels</h2>
-          <ul className="space-y-2">
-            {channels.map((ch) => (
-              <li
-                key={ch.id}
-                className="cursor-pointer p-2 bg-gray-700 rounded hover:bg-gray-600"
-                onClick={() => setSelectedChannel(ch.id)}
-              >
-                #{ch.name}
-              </li>
-            ))}
-          </ul>
-
-          {/* New Channel Button */}
-          <button
-            className="mt-4 p-2 bg-blue-500 rounded text-white hover:bg-blue-600"
-            onClick={() => setShowForm(!showForm)}
-          >
-            {showForm ? 'Cancel' : 'Create Channel'}
-          </button>
-
-          {/* Channel Creation Form */}
-          {showForm && (
-            <div className="mt-4">
-              <input
-                type="text"
-                className="p-2 bg-gray-700 rounded w-full mb-2"
-                placeholder="Enter channel name"
-                value={newChannelName}
-                onChange={(e) => setNewChannelName(e.target.value)}
-              />
-              <button
-                onClick={handleCreateChannel}
-                className="p-2 bg-green-500 rounded text-white hover:bg-green-600"
-              >
-                Create Channel
-              </button>
+      {/* User Profile & Status */}
+      <div className="absolute top-4 right-4 flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          {user.avatar_url ? (
+            <img 
+              src={user.avatar_url} 
+              alt={user.username} 
+              className="w-8 h-8 rounded-full"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+              {user.username.charAt(0).toUpperCase()}
             </div>
           )}
+          <span className="text-gray-300">{user.username}</span>
+        </div>
+        <div className={`px-2 py-1 rounded text-sm ${
+          isConnected ? 'bg-green-500' : 'bg-red-500'
+        }`}>
+          {isConnected ? 'Connected' : 'Disconnected'}
+        </div>
+        <button
+          onClick={logout}
+          className="px-2 py-1 bg-red-500 rounded hover:bg-red-600"
+        >
+          Logout
+        </button>
+      </div>
+
+      <div className="flex flex-col">
+        <h1 className="text-3xl font-bold mb-4">Discord (real)</h1>
+        
+        {/* Tabs */}
+        <div className="flex justify-center mb-4 border-b border-gray-700">
+          <button
+            className={`px-4 py-2 ${
+              activeTab === 'friends'
+                ? 'border-b-2 border-blue-500 text-blue-500'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+            onClick={() => setActiveTab('friends')}
+          >
+            Friends
+          </button>
+          <button
+            className={`px-4 py-2 ${
+              activeTab === 'nitro'
+                ? 'border-b-2 border-blue-500 text-blue-500'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+            onClick={() => setActiveTab('nitro')}
+          >
+            Nitro
+          </button>
         </div>
 
-        {/* Chat Room */}
-        <div className="w-3/4 ml-4">
-          {selectedChannel && (
-            <ChatRoom channelId={selectedChannel} userId={1} />
-          )}
+        <div className="flex">
+          <div className="w-1/4">
+            {/* Text Channels */}
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-2">Text Channels</h2>
+              <ul className="space-y-2">
+                {textChannels.map((ch) => (
+                  <li
+                    key={ch.id}
+                    className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
+                      selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
+                    }`}
+                    onClick={() => setSelectedChannel({ ...ch, type: 'text' })}
+                  >
+                    # {ch.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Voice Channels */}
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-2">Voice Channels</h2>
+              <ul className="space-y-2">
+                {voiceChannels.map((ch) => (
+                  <li
+                    key={ch.id}
+                    className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
+                      selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
+                    }`}
+                    onClick={() => setSelectedChannel({ ...ch, type: 'voice' })}
+                  >
+                    🔊 {ch.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Channel Creation */}
+            <button
+              className="mt-4 p-2 bg-blue-500 rounded text-white hover:bg-blue-600 w-full"
+              onClick={() => setShowForm(!showForm)}
+            >
+              {showForm ? 'Cancel' : 'Create Channel'}
+            </button>
+
+            {showForm && (
+              <div className="mt-4 space-y-2">
+                <input
+                  type="text"
+                  className="p-2 bg-gray-700 rounded w-full"
+                  placeholder="Enter channel name"
+                  value={newChannelName}
+                  onChange={(e) => setNewChannelName(e.target.value)}
+                />
+                <select
+                  className="p-2 bg-gray-700 rounded w-full"
+                  value={newChannelType}
+                  onChange={(e) => setNewChannelType(e.target.value)}
+                >
+                  <option value="text">Text Channel</option>
+                  <option value="voice">Voice Channel</option>
+                </select>
+                <button
+                  onClick={handleCreateChannel}
+                  className="p-2 bg-green-500 rounded text-white hover:bg-green-600 w-full"
+                >
+                  Create Channel
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="w-3/4 ml-4">
+            {selectedChannel && (
+              <ChatRoom 
+                channelId={selectedChannel.id} 
+                userId={user.id} 
+                type={selectedChannel.type}
+                username={user.username}
+                avatar={user.avatar_url} 
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>
