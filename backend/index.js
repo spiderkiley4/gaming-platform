@@ -313,7 +313,11 @@ app.post('/channels', async (req, res) => {
 
 app.get('/channels/:id/messages', async (req, res) => {
   const result = await db.query(
-    'SELECT * FROM messages WHERE channel_id = $1 ORDER BY created_at ASC',
+    `SELECT m.*, u.username, u.avatar_url 
+     FROM messages m 
+     LEFT JOIN users u ON m.user_id = u.id 
+     WHERE m.channel_id = $1 
+     ORDER BY m.created_at ASC`,
     [req.params.id]
   );
   res.json(result.rows);

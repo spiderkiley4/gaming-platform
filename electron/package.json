@@ -1,0 +1,39 @@
+{
+  "name": "electron",
+  "version": "1.0.0",
+  "description": "Electron Application",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "start": "npm run build && cross-env NODE_ENV=production electron .",
+    "dev": "concurrently \"cd ../frontend && npm run dev\" \"cross-env NODE_ENV=development electron .\"",
+    "package": "npm run build && electron-builder",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "build": {
+    "appId": "com.gaming-platform.app",
+    "directories": {
+      "output": "release/"
+    },
+    "files": [
+      "dist/**/*",
+      "../frontend/dist/**/*"
+    ]
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/electron-devtools-installer": "^2.2.5",
+    "@types/node": "^22.14.0",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^35.1.5",
+    "electron-builder": "^24.9.1",
+    "electron-devtools-installer": "^3.2.0",
+    "electron-reload": "^2.0.0-alpha.1",
+    "typescript": "^5.8.3"
+  }
+}

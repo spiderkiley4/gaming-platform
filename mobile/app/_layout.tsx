@@ -1,16 +1,13 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Stack, Slot, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import 'react-native-reanimated';
-import { View } from 'react-native';
-
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { StatusBar } from 'expo-status-bar';
+import { View } from 'react-native';
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 function useProtectedRoute(user: any) {
@@ -21,17 +18,15 @@ function useProtectedRoute(user: any) {
     const inAuthGroup = segments[0] === '(auth)';
     
     if (!user && !inAuthGroup) {
-      // Redirect to the sign-in page.
       router.replace('/(auth)/auth');
     } else if (user && inAuthGroup) {
-      // Redirect away from the sign-in page.
-      router.replace('/(tabs)');
+      router.replace('/');
     }
   }, [user, segments]);
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const colorScheme = useColorScheme() ?? 'light';
   const { user, loading } = useAuth();
   
   const [loaded] = useFonts({
@@ -52,8 +47,23 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Slot />
-      <StatusBar style="auto" />
+      <View style={{
+        flex: 1,
+        backgroundColor: '#1F2937'
+      }}>
+        <View
+          style={{
+            width: '100%',
+            height: 20,
+            backgroundColor: '#1F2937',
+          }}
+        />
+        <StatusBar style="auto" />
+        <Stack>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        </Stack>
+      </View>
     </ThemeProvider>
   );
 }

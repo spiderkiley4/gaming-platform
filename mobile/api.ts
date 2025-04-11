@@ -1,11 +1,11 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-// Use localhost for development
-export const API_URL = __DEV__ 
-  ? 'http://localhost:3001'
-  : 'http://192.168.1.60:3001';  // Production URL should be updated
+// Use localhost for iOS simulator, actual IP for physical devices
+export const API_URL = Platform.OS === 'ios' 
+  ? 'http://localhost:3001'  
+  : 'http://192.168.1.60:3001'; // Update this IP to match your computer's local IP
 
 // Create axios instance with auth header interceptor
 const api = axios.create({

@@ -9,42 +9,77 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      getCurrentUser()
-        .then(res => {
+    const loadUser = async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const res = await getCurrentUser();
           setUser(res.data);
-          initSocket();
-        })
-        .catch(() => {
+          const socket = initSocket();
+          if (!socket) {
+            throw new Error('Failed to initialize socket');
+          }
+        } catch (err) {
+          console.error('Failed to load user:', err);
           localStorage.removeItem('token');
-        })
-        .finally(() => setLoading(false));
-    } else {
+          disconnectSocket();
+          setUser(null);
+        }
+      }
       setLoading(false);
-    }
+    };
+
+    loadUser();
+
+    return () => {
+      disconnectSocket();
+    };
   }, []);
 
   const loginUser = async (username, password) => {
-    const res = await login(username, password);
-    localStorage.setItem('token', res.data.token);
-    setUser(res.data.user);
-    initSocket();
-    return res.data;
+    try {
+      const res = await login(username, password);
+      localStorage.setItem('token', res.data.token);
+      setUser(res.data.user);
+      const socket = initSocket();
+      if (!socket) {
+        throw new Error('Failed to initialize socket');
+      }
+      return res.data;
+    } catch (err) {
+      console.error('Login failed:', err);
+      localStorage.removeItem('token');
+      disconnectSocket();
+      throw err;
+    }
   };
 
   const registerUser = async (username, email, password) => {
-    const res = await register(username, email, password);
-    localStorage.setItem('token', res.data.token);
-    setUser(res.data.user);
-    initSocket();
-    return res.data;
+    try {
+      const res = await register(username, email, password);
+      localStorage.setItem('token', res.data.token);
+      setUser(res.data.user);
+      const socket = initSocket();
+      if (!socket) {
+        throw new Error('Failed to initialize socket');
+      }
+      return res.data;
+    } catch (err) {
+      console.error('Registration failed:', err);
+      localStorage.removeItem('token');
+      disconnectSocket();
+      throw err;
+    }
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    setUser(null);
-    disconnectSocket();
+    try {
+      localStorage.removeItem('token');
+      disconnectSocket();
+      setUser(null);
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
   };
 
   if (loading) {
