@@ -89,7 +89,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
   }
 
   return (
-    <div className="flex flex-col bg-gray-800 p-4 rounded-lg">
+    <div className="flex flex-col h-[calc(100vh-140px)] bg-gray-800 p-4 rounded-lg">
       <div className="h-80 overflow-y-scroll">
         {messages.map((m) => (
           <div 

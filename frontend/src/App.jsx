@@ -74,7 +74,7 @@ export default function App() {
   };
 
   return (
-    <div className="p-4 text-white bg-gray-900 min-h-screen relative">
+    <div className="p-4 text-white bg-gray-900 min-h-screen relative overflow-clip">
       {/* User Profile & Status */}
       <div className="absolute top-4 right-4 flex items-center gap-4">
         <div className="flex items-center gap-2">
@@ -104,34 +104,37 @@ export default function App() {
         </button>
       </div>
 
-      <div className="flex flex-col">
-        <h1 className="text-3xl font-bold mb-4">Discord (real)</h1>
-        
-        {/* Tabs */}
-        <div className="flex justify-center mb-4 border-b border-gray-700">
-          <button
-            className={`px-4 py-2 ${
-              activeTab === 'friends'
-                ? 'border-b-2 border-blue-500 text-blue-500'
-                : 'text-gray-400 hover:text-gray-200'
-            }`}
-            onClick={() => setActiveTab('friends')}
-          >
-            Friends
-          </button>
-          <button
-            className={`px-4 py-2 ${
-              activeTab === 'nitro'
-                ? 'border-b-2 border-blue-500 text-blue-500'
-                : 'text-gray-400 hover:text-gray-200'
-            }`}
-            onClick={() => setActiveTab('nitro')}
-          >
-            Nitro
-          </button>
+      <div className="flex flex-col h-screen">
+        <div>
+          <h1 className="text-3xl font-bold mb-4">Jemcord</h1>
+          
+          
+          {/* Tabs */}
+          <div className="flex justify-center mb-4 border-b border-gray-700">
+            <button
+              className={`px-4 py-2 ${
+                activeTab === 'friends'
+                  ? 'border-b-2 border-blue-500 text-blue-500'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+              onClick={() => setActiveTab('friends')}
+            >
+              Friends
+            </button>
+            <button
+              className={`px-4 py-2 ${
+                activeTab === 'nitro'
+                  ? 'border-b-2 border-blue-500 text-blue-500'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+              onClick={() => setActiveTab('nitro')}
+            >
+              Nitro
+            </button>
+          </div>
         </div>
 
-        <div className="flex">
+        <div className="flex h-[calc(100vh-111px)]">
           <div className="w-1/4">
             {/* Text Channels */}
             <div className="mb-6">
