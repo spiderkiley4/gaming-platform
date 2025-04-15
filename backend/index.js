@@ -16,7 +16,7 @@ app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
-const __filename = fileURLToPath(import.meta.url);
+/*const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Serve static files from the React app
@@ -25,7 +25,7 @@ app.use(express.static(path.join(__dirname, '../web/dist')));
 // Serve index.html for all other routes (SPA routing)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../web/dist/index.html'));
-});
+});*/
 
 
 // Authentication middleware

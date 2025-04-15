@@ -6,7 +6,7 @@ export const initSocket = () => {
   const token = localStorage.getItem('token');
   if (!token) return null;
 
-  socket = io('http://localhost:3001', {
+  socket = io('http://10.100.243.108:3001', {
     transports: ['websocket'],
     upgrade: false,
     auth: { token },
