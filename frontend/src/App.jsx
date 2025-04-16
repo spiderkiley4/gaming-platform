@@ -74,7 +74,7 @@ export default function App() {
   };
 
   return (
-    <div className="p-4 text-white bg-gray-900 min-h-screen relative overflow-clip">
+    <div className="p-4 text-white bg-gray-900 min-h-screen relative overflow-hidden">
       {/* User Profile & Status */}
       <div className="absolute top-4 right-4 flex items-center gap-4">
         <div className="flex items-center gap-2">
@@ -104,7 +104,7 @@ export default function App() {
         </button>
       </div>
 
-      <div className="flex flex-col h-screen">
+      <div className="flex flex-col flex-grow">
         <div>
           <h1 className="text-3xl font-bold mb-4">Jemcord</h1>
           
@@ -134,8 +134,8 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex h-[calc(100vh-111px)]">
-          <div className="w-1/4">
+        <div className="flex h-[calc(100vh-140px)]">
+          <div className="w-1/6 h-[calc(100vh-140px)]">
             {/* Text Channels */}
             <div className="mb-6">
               <h2 className="text-xl font-semibold mb-2">Text Channels</h2>
@@ -207,7 +207,7 @@ export default function App() {
             )}
           </div>
 
-          <div className="w-3/4 ml-4">
+          <div className="w-5/6 h-[calc(100vh-140px)] ml-4">
             {selectedChannel && (
               <ChatRoom 
                 channelId={selectedChannel.id} 

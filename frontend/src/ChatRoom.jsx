@@ -89,36 +89,36 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] bg-gray-800 p-4 rounded-lg">
-      <div className="h-80 overflow-y-scroll">
+    <div className="flex flex-col bg-gray-800 p-4 rounded-lg h-[calc(100vh-140px)]">
+      <div className="flex flex-col h-[calc(100vh-100px)] overflow-y-auto">
         {messages.map((m) => (
           <div 
-            key={m.id} 
-            className={`border border-gray-600 p-2 mb-2 bg-gray-700 rounded ${
-              m.user_id === userId ? 'ml-auto max-w-[80%]' : 'mr-auto max-w-[80%]'
-            }`}
-          >
-            <div className="flex items-center gap-2 mb-1">
-              {m.avatar_url ? (
-                <img 
-                  src={m.avatar_url} 
-                  alt={m.username} 
-                  className="w-6 h-6 rounded-full"
-                />
-              ) : (
-                <div className="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">
-                  {m.username ? m.username.charAt(0).toUpperCase() : `U${m.user_id}`}
-                </div>
-              )}
-              <span className="text-sm text-gray-300">
-                {m.username || `User #${m.user_id}`}
-              </span>
-              <span className="text-xs text-gray-400">
-                {new Date(m.created_at).toLocaleTimeString()}
-              </span>
-            </div>
-            <div className="text-white break-words">{m.content}</div>
+          key={m.id} 
+          className={`p-2 mb-2 mr-4 rounded w-full hover:bg-gray-700/60 ${
+            m.user_id === userId ? 'ml-auto' : 'mr-auto'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            {m.avatar_url ? (
+              <img 
+                src={m.avatar_url} 
+                alt={m.username} 
+                className="w-6 h-6 rounded-full"
+              />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">
+                {m.username ? m.username.charAt(0).toUpperCase() : `U${m.user_id}`}
+              </div>
+            )}
+            <span className="text-sm text-gray-300">
+              {m.username || `User #${m.user_id}`}
+            </span>
+            <span className="text-xs text-gray-400">
+              {new Date(m.created_at).toLocaleTimeString()}
+            </span>
           </div>
+          <div className="text-white break-words">{m.content}</div>
+        </div>
         ))}
         <div ref={messagesEndRef} />
       </div>

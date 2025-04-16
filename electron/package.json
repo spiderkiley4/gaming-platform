@@ -19,7 +19,8 @@
     "files": [
       "dist/**/*",
       "../frontend/dist/**/*"
-    ]
+    ],
+    "icon": "src/assets/jemcord.png"
   },
   "keywords": [],
   "author": "",
