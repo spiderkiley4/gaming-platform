@@ -6,8 +6,8 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "start": "npm run build && cross-env NODE_ENV=production electron .",
-    "dev": "concurrently \"cd ../frontend && npm run dev\" \"cross-env NODE_ENV=development electron .\"",
+    "start": "npm run build && cross-env NODE_ENV=production nodemon --watch main.js --exec electron .",
+    "dev": "concurrently \"cd ../frontend && npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development nodemon --watch main.js --exec electron .",
     "package": "npm run build && electron-builder",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -34,6 +34,8 @@
     "electron-builder": "^24.9.1",
     "electron-devtools-installer": "^3.2.0",
     "electron-reload": "^2.0.0-alpha.1",
-    "typescript": "^5.8.3"
+    "nodemon": "^3.1.9",
+    "typescript": "^5.8.3",
+    "wait-on": "^8.0.3"
   }
 }

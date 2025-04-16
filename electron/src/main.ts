@@ -3,10 +3,13 @@ import * as path from 'path';
 
 const isDev = process.env.NODE_ENV === 'development';
 
+console.log('Electron main process started!');
+
 function createWindow() {
     const mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        autoHideMenuBar: true,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
@@ -14,16 +17,16 @@ function createWindow() {
     });
 
     // In development, load from React dev server
-    if (isDev) {
+    //if (isDev) {
         mainWindow.loadURL('http://localhost:5173');
         // Open DevTools in development
         mainWindow.webContents.openDevTools();
-    } else {
+    /*} else {
         // In production, load from the frontend build
         mainWindow.loadURL(
             'file://' + path.join(__dirname, '../frontend/dist/index.html')
         );
-    }
+    }*/
 }
 
 app.whenReady().then(() => {
@@ -34,8 +37,8 @@ app.whenReady().then(() => {
         try {
             const { default: installExtension, REACT_DEVELOPER_TOOLS } = require('electron-devtools-installer');
             installExtension(REACT_DEVELOPER_TOOLS)
-                .then((name) => console.log(`Added Extension: ${name}`))
-                .catch((err) => console.log('An error occurred: ', err));
+                .then((name: string) => console.log(`Added Extension: ${name}`))
+                .catch((err: Error) => console.log('An error occurred: ', err));
         } catch (e) {
             console.error('Error installing devtools:', e);
         }
