@@ -7,6 +7,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from './db.js';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -20,6 +23,42 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer for image uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadsDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  // Accept images only
+  if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
+    return cb(new Error('Only image files are allowed!'), false);
+  }
+  cb(null, true);
+};
+
+const upload = multer({ 
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
+});
+
+// Serve uploaded files statically
+app.use('/uploads', express.static(uploadsDir));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -189,11 +228,11 @@ io.on('connection', (socket) => {
     socket.join(`channel-${channelId}`);
   });
 
-  socket.on('send_message', async ({ content, channelId }) => {
+  socket.on('send_message', async ({ content, channelId, type = 'text' }) => {
     try {
       const result = await db.query(
-        'INSERT INTO messages (content, user_id, channel_id) VALUES ($1, $2, $3) RETURNING *',
-        [content, socket.user.id, channelId]
+        'INSERT INTO messages (content, user_id, channel_id, type) VALUES ($1, $2, $3, $4) RETURNING *',
+        [content, socket.user.id, channelId, type]
       );
       
       // Get user info for the message
@@ -345,6 +384,61 @@ app.get('/channels/:id/messages', async (req, res) => {
     [req.params.id]
   );
   res.json(result.rows);
+});
+
+// Image upload endpoint
+app.post('/api/upload-image', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { channelId } = req.body;
+    if (!channelId) {
+      // Delete the uploaded file if channelId is missing
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Channel ID is required' });
+    }
+
+    // Get the URL for the uploaded file
+    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+
+    // Insert the message with type 'image'
+    const messageResult = await db.query(
+      'INSERT INTO messages (content, user_id, channel_id, type) VALUES ($1, $2, $3, $4) RETURNING *',
+      [imageUrl, req.user.id, channelId, 'image']
+    );
+
+    // Insert image metadata
+    await db.query(
+      'INSERT INTO images (message_id, url, filename, mime_type, size) VALUES ($1, $2, $3, $4, $5)',
+      [messageResult.rows[0].id, imageUrl, req.file.filename, req.file.mimetype, req.file.size]
+    );
+
+    // Get user info for the message
+    const userResult = await db.query(
+      'SELECT username, avatar_url FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
+    const message = {
+      ...messageResult.rows[0],
+      username: userResult.rows[0].username,
+      avatar_url: userResult.rows[0].avatar_url
+    };
+
+    // Emit the new message to all users in the channel
+    io.to(`channel-${channelId}`).emit('new_message', message);
+
+    res.json({ imageUrl, message });
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    // Delete the uploaded file if there was an error
+    if (req.file) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
 });
 
 server.listen(process.env.PORT, () => {
