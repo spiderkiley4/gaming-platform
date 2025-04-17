@@ -15,9 +15,17 @@ jobs:
         run: |
           docker run --rm \
             -v "$PWD":/project \
+            -v "$PWD/artifacts":/artifacts \
             -w /project/electron \
             electronuserland/builder:wine \
-            /bin/bash -c "npm install && cd ../frontend && npm install && npm run build && cd ../electron && npm run package"
+            /bin/bash -c "npm install && cd ../frontend && npm install && npm run build && cd ../electron && npm run package && cp -r release/* /artifacts/"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: artifacts/
+
   release:
     name: Create GitHub Release
     needs: build
@@ -38,4 +46,3 @@ jobs:
           files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
