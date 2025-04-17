@@ -6,7 +6,11 @@ export const initSocket = () => {
   const token = localStorage.getItem('token');
   if (!token) return null;
 
-  socket = io('http://47.6.25.173:3001', {
+  const SOCKET_URL = import.meta.env.PROD 
+    ? import.meta.env.VITE_SOCKET_URL_PRODUCTION
+    : import.meta.env.VITE_SOCKET_URL_DEVELOPMENT;
+
+  socket = io(SOCKET_URL, {
     transports: ['websocket'],
     upgrade: false,
     auth: { token },

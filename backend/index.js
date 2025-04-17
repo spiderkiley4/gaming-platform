@@ -11,7 +11,14 @@ import { fileURLToPath } from 'url';
 dotenv.config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://your-production-domain.com'] // Replace with your actual production domain
+    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', 'http://10.102.128.82:5173'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -152,8 +159,11 @@ app.patch('/users/me', authenticateToken, async (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { 
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: process.env.NODE_ENV === 'production'
+      ? ['https://your-production-domain.com'] // Replace with your actual production domain
+      : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', 'http://10.102.128.82:5173'],
+    methods: ["GET", "POST"],
+    credentials: true
   },
   transports: ['websocket']
 });
