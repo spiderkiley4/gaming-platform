@@ -19,8 +19,10 @@ jobs:
 
       - name: Install Wine (for Windows builds)
         run: |
+          sudo dpkg --add-architecture i386
           sudo apt update
-          sudo apt install -y --no-install-recommends wine64
+          sudo apt install -y --no-install-recommends \
+            wine64 wine32 libwine libwine:i386 fonts-wine
 
       - name: Install frontend dependencies
         working-directory: frontend
