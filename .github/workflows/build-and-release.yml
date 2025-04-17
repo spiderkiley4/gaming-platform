@@ -1,3 +1,8 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:  # Trigger manually
+
 jobs:
   build:
     runs-on: ubuntu-latest
