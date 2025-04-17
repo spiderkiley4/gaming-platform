@@ -17,4 +17,25 @@ jobs:
             -v "$PWD":/project \
             -w /project/electron \
             electronuserland/builder:wine \
-            /bin/bash -c "npm install && cd ../frontend && npm install && npm run build && npm run package"
+            /bin/bash -c "npm install && cd ../frontend && npm install && npm run build && cd ../electron && npm run package"
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
