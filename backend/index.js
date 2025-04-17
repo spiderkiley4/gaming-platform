@@ -12,9 +12,9 @@ dotenv.config();
 
 const app = express();
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
+  origin: process.env.NODE_ENV === 'production'
     ? ['https://your-production-domain.com'] // Replace with your actual production domain
-    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', 'http://10.102.128.82:5173'],
+    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', 'http://10.102.128.82:5173', 'http://47.6.25.173:3001'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization']
