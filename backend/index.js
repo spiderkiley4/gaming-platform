@@ -160,7 +160,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { 
     origin: process.env.NODE_ENV === 'production'
-      ? ['https://your-production-domain.com'] // Replace with your actual production domain
+      ? ['http://47.6.25.173'] // Replace with your actual production domain
       : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', 'http://10.102.128.82:5173', 'http://10.102.128.82:3001', "http://10.100.243.108:5173", "http://10.100.243.108:3001"],
     methods: ["GET", "POST"],
     credentials: true
