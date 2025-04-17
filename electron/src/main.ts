@@ -18,16 +18,14 @@ function createWindow() {
     });
 
     // In development, load from React dev server
-    //if (isDev) {
+    if (isDev) {
         mainWindow.loadURL('http://localhost:5173');
         // Open DevTools in development
         mainWindow.webContents.openDevTools();
-    /*} else {
+    } else {
         // In production, load from the frontend build
-        mainWindow.loadURL(
-            'file://' + path.join(__dirname, '../frontend/dist/index.html')
-        );
-    }*/
+        mainWindow.loadFile(path.join(__dirname, 'frontend', 'index.html'));
+    }
 }
 
 app.whenReady().then(() => {

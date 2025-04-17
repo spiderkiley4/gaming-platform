@@ -2,8 +2,8 @@ import axios from 'axios';
 
 // Determine the API URL based on the environment
 const API_URL = process.env.NODE_ENV === 'development' 
-  ? 'http://localhost:3000'
-  : 'https://your-production-api.com';
+  ? 'http://47.6.25.173:3000'
+  : 'http://47.6.25.173:3000';
 
 const api = axios.create({
   baseURL: API_URL,

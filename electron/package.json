@@ -4,11 +4,14 @@
   "description": "Electron Application",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc",
+    "build:electron": "tsc",
+    "build:frontend": "cd ../frontend && npm run build",
+    "copy:frontend": "cpx \"../frontend/dist/**/*\" dist/frontend",
+    "build": "npm run build:electron && npm run build:frontend && npm run copy:frontend",
     "watch": "tsc -w",
     "start": "npm run build && cross-env NODE_ENV=production nodemon --watch main.js --exec electron .",
     "dev": "concurrently \"cd ../frontend && npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development nodemon --watch main.js --exec electron .",
-    "package": "npm run build && electron-builder",
+    "package": "npm run build && electron-builder --linux AppImage --win portable --x64",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "build": {
@@ -20,7 +23,10 @@
       "dist/**/*",
       "../frontend/dist/**/*"
     ],
-    "icon": "src/assets/jemcord.png"
+    "icon": "src/assets/jemcord.png",
+    "win": {
+      "target": "portable"
+    }
   },
   "keywords": [],
   "author": "",
@@ -30,9 +36,10 @@
     "@types/electron-devtools-installer": "^2.2.5",
     "@types/node": "^22.14.0",
     "concurrently": "^9.1.2",
+    "cpx": "^1.5.0",
     "cross-env": "^7.0.3",
     "electron": "^35.1.5",
-    "electron-builder": "^24.9.1",
+    "electron-builder": "^24.13.3",
     "electron-devtools-installer": "^3.2.0",
     "electron-reload": "^2.0.0-alpha.1",
     "nodemon": "^3.1.9",

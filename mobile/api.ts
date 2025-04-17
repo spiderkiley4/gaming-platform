@@ -4,8 +4,8 @@ import { Platform } from 'react-native';
 
 // Use localhost for iOS simulator, actual IP for physical devices
 export const API_URL = Platform.OS === 'ios' 
-  ? 'http://localhost:3001'  
-  : 'http://192.168.1.60:3001'; // Update this IP to match your computer's local IP
+  ? 'http://47.6.25.173:3001'  
+  : 'http://47.6.25.173:3001'; // Update this IP to match your computer's local IP
 
 // Create axios instance with auth header interceptor
 const api = axios.create({
