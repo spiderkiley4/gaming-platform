@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog } from 'electron';
 import * as path from 'path';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
+import * as fs from 'fs';
 
 const isDev = process.env.NODE_ENV === 'development';
 const appVersion = app.getVersion();
@@ -13,6 +14,36 @@ autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 autoUpdater.logger = log;
 log.transports.file.level = 'debug';
+
+// Handle platform-specific integration
+if (process.platform === 'win32') {
+    app.setAppUserModelId(app.getName());
+    app.setAsDefaultProtocolClient(app.getName());
+} else if (process.platform === 'linux') {
+    // Ensure desktop file is updated after auto-update
+    autoUpdater.on('update-downloaded', (info) => {
+        try {
+            const desktopEntry = `[Desktop Entry]
+Name=${app.getName()}
+Exec=${process.execPath} %U
+Terminal=false
+Type=Application
+Icon=${path.join(path.dirname(process.execPath), 'resources', 'assets', 'jemcord.png')}
+StartupWMClass=${app.getName()}
+Comment=Gaming Platform
+Categories=Game;`;
+
+            // Write to user's local applications directory
+            const userDesktopFilePath = path.join(app.getPath('home'), '.local', 'share', 'applications', `${app.getName()}.desktop`);
+            fs.mkdirSync(path.dirname(userDesktopFilePath), { recursive: true });
+            fs.writeFileSync(userDesktopFilePath, desktopEntry);
+            // Make it executable
+            fs.chmodSync(userDesktopFilePath, '755');
+        } catch (error) {
+            console.error('Error updating desktop file:', error);
+        }
+    });
+}
 
 // Set update server URL if needed
 if (!isDev) {
