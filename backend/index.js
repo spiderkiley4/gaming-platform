@@ -28,7 +28,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure multer for image uploads
+// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadsDir);
@@ -40,18 +40,31 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  // Accept images only
-  if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/)) {
-    return cb(new Error('Only image files are allowed!'), false);
+  // Accept images, videos, and other files
+  const allowedImageTypes = /\.(jpg|jpeg|png|gif|webp)$/i;
+  const allowedVideoTypes = /\.(mp4|webm|ogg|mov)$/i;
+  const allowedFileTypes = /\.(pdf|doc|docx|txt|zip|rar|7z)$/i;
+
+  if (file.originalname.match(allowedImageTypes)) {
+    file.fileType = 'image';
+    return cb(null, true);
   }
-  cb(null, true);
+  if (file.originalname.match(allowedVideoTypes)) {
+    file.fileType = 'video';
+    return cb(null, true);
+  }
+  if (file.originalname.match(allowedFileTypes)) {
+    file.fileType = 'file';
+    return cb(null, true);
+  }
+  cb(new Error('Invalid file type!'), false);
 };
 
 const upload = multer({ 
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 50 * 1024 * 1024 // 50MB limit
   }
 });
 
@@ -383,8 +396,8 @@ app.get('/channels/:id/messages', async (req, res) => {
   res.json(result.rows);
 });
 
-// Image upload endpoint
-app.post('/api/upload-image', authenticateToken, upload.single('image'), async (req, res) => {
+// File upload endpoint
+app.post('/api/upload-file', authenticateToken, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -398,18 +411,18 @@ app.post('/api/upload-image', authenticateToken, upload.single('image'), async (
     }
 
     // Get the URL for the uploaded file
-    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
-    // Insert the message with type 'image'
+    // Insert the message with appropriate type
     const messageResult = await db.query(
       'INSERT INTO messages (content, user_id, channel_id, type) VALUES ($1, $2, $3, $4) RETURNING *',
-      [imageUrl, req.user.id, channelId, 'image']
+      [fileUrl, req.user.id, channelId, req.file.fileType]
     );
 
-    // Insert image metadata
+    // Insert file metadata
     await db.query(
-      'INSERT INTO images (message_id, url, filename, mime_type, size) VALUES ($1, $2, $3, $4, $5)',
-      [messageResult.rows[0].id, imageUrl, req.file.filename, req.file.mimetype, req.file.size]
+      'INSERT INTO media_files (message_id, url, filename, mime_type, size, file_type) VALUES ($1, $2, $3, $4, $5, $6)',
+      [messageResult.rows[0].id, fileUrl, req.file.filename, req.file.mimetype, req.file.size, req.file.fileType]
     );
 
     // Get user info for the message
@@ -427,14 +440,14 @@ app.post('/api/upload-image', authenticateToken, upload.single('image'), async (
     // Emit the new message to all users in the channel
     io.to(`channel-${channelId}`).emit('new_message', message);
 
-    res.json({ imageUrl, message });
+    res.json({ fileUrl, message });
   } catch (error) {
-    console.error('Error uploading image:', error);
+    console.error('Error uploading file:', error);
     // Delete the uploaded file if there was an error
     if (req.file) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ error: 'Failed to upload image' });
+    res.status(500).json({ error: 'Failed to upload file' });
   }
 });
 

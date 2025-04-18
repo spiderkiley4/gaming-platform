@@ -20,16 +20,17 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     user_id INTEGER REFERENCES users(id),
     channel_id INTEGER REFERENCES channels(id),
-    type VARCHAR(50) DEFAULT 'text' CHECK (type IN ('text', 'image')),
+    type VARCHAR(50) DEFAULT 'text' CHECK (type IN ('text', 'image', 'video', 'file')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS images (
+CREATE TABLE IF NOT EXISTS media_files (
     id SERIAL PRIMARY KEY,
     message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
     url TEXT NOT NULL,
     filename VARCHAR(255) NOT NULL,
     mime_type VARCHAR(100) NOT NULL,
     size INTEGER NOT NULL,
+    file_type VARCHAR(50) NOT NULL CHECK (file_type IN ('image', 'video', 'file')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

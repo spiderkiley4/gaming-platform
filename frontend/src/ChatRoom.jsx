@@ -8,7 +8,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -63,24 +63,18 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
     }
   }, [channelId, type, socket]);
 
-  const handleImageUpload = async (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     
-    // Check if file is an image
-    if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file');
-      return;
-    }
-    
-    // Check file size (limit to 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Image size should be less than 5MB');
+    // Check file size (limit to 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      alert('File size should be less than 50MB');
       return;
     }
     
     // Store the selected file
-    setSelectedImage(file);
+    setSelectedFile(file);
     
     // Reset the file input
     if (fileInputRef.current) {
@@ -88,17 +82,21 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
     }
   };
 
+  const removeSelectedFile = () => {
+    setSelectedFile(null);
+  };
+
   const sendMessage = async () => {
-    if (selectedImage) {
+    if (selectedFile) {
       setIsUploading(true);
       try {
         // Create a FormData object to send the file
         const formData = new FormData();
-        formData.append('image', selectedImage);
+        formData.append('file', selectedFile);
         formData.append('channelId', channelId);
         
-        // Send the image to the server
-        const response = await fetch(`${API_URL}/api/upload-image`, {
+        // Send the file to the server
+        const response = await fetch(`${API_URL}/api/upload-file`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -107,14 +105,14 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
         });
         
         if (!response.ok) {
-          throw new Error('Failed to upload image');
+          throw new Error('Failed to upload file');
         }
         
         // The backend will handle emitting the message through socket
-        setSelectedImage(null);
+        setSelectedFile(null);
       } catch (error) {
-        console.error('Error uploading image:', error);
-        alert('Failed to upload image. Please try again.');
+        console.error('Error uploading file:', error);
+        alert('Failed to upload file. Please try again.');
       } finally {
         setIsUploading(false);
       }
@@ -146,25 +144,58 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
 
   // Render message content based on type
   const renderMessageContent = (message) => {
-    if (message.type === 'image') {
-      return (
-        <div className="max-w-[300px] max-h-[300px] overflow-hidden rounded">
-          <img 
-            src={message.content} 
-            alt="Chat image" 
-            className="w-full h-auto object-contain"
-            loading="lazy"
-            onLoad={() => {
-              // Only scroll if we're already near the bottom
-              if (shouldAutoScroll) {
-                scrollToBottom();
-              }
-            }}
-          />
-        </div>
-      );
+    switch (message.type) {
+      case 'image':
+        return (
+          <div className="max-w-[300px] max-h-[300px] overflow-hidden rounded">
+            <img 
+              src={message.content} 
+              alt="Chat image" 
+              className="w-full h-auto object-contain"
+              loading="lazy"
+              onLoad={() => {
+                if (shouldAutoScroll) {
+                  scrollToBottom();
+                }
+              }}
+            />
+          </div>
+        );
+      case 'video':
+        return (
+          <div className="max-w-[400px] max-h-[300px] overflow-hidden rounded">
+            <video 
+              src={message.content}
+              controls
+              className="w-full h-auto"
+              onLoadedMetadata={() => {
+                if (shouldAutoScroll) {
+                  scrollToBottom();
+                }
+              }}
+            />
+          </div>
+        );
+      case 'file':
+        const fileName = message.content.split('/').pop();
+        return (
+          <div className="flex items-center gap-2 p-2 bg-gray-700 rounded">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <a 
+              href={message.content}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:underline truncate"
+            >
+              {fileName}
+            </a>
+          </div>
+        );
+      default:
+        return <div className="text-white break-words">{message.content}</div>;
     }
-    return <div className="text-white break-words">{message.content}</div>;
   };
 
   if (type === 'voice') {
@@ -265,6 +296,15 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
         <div ref={messagesEndRef} />
       </div>
       <div className="flex items-center mt-4">
+        {/* Preview section for selected file */}
+        {selectedFile && (
+          <div className="flex items-center justify-between bg-gray-700 p-2 rounded mb-2">
+            <span className="text-white">{selectedFile.name}</span>
+            <button onClick={removeSelectedFile} className="text-red-500">
+              X
+            </button>
+          </div>
+        )}
         <input
           value={messageInput}
           className="flex-1 p-2 border border-gray-600 bg-gray-700 rounded text-white"
@@ -276,8 +316,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
           type="file"
           ref={fileInputRef}
           className="hidden"
-          accept="image/*"
-          onChange={handleImageUpload}
+          onChange={handleFileUpload}
         />
         <button 
           onClick={() => fileInputRef.current.click()}
@@ -292,7 +331,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
               </svg>
               Uploading...
             </span>
-          ) : selectedImage ? (
+          ) : selectedFile ? (
             <span className="flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -300,14 +339,14 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
             </span>
           ) : (
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
             </svg>
           )}
         </button>
         <button 
           onClick={sendMessage} 
           className="ml-2 p-2 w-20 bg-blue-500 rounded text-white hover:bg-blue-600"
-          disabled={isUploading || (!messageInput.trim() && !selectedImage)}
+          disabled={isUploading || (!messageInput.trim() && !selectedFile)}
         >
           Send
         </button>
