@@ -3,6 +3,7 @@ import { getMessages } from './api';
 import { useVoiceChat } from './hooks/useVoiceChat';
 import { getSocket } from './socket';
 import { API_URL } from './api';
+import VideoPlayer from './components/VideoPlayer'; // Adjust the path as necessary
 
 export default function ChatRoom({ channelId, userId, type, username, avatar }) {
   const [messages, setMessages] = useState([]);
@@ -163,17 +164,8 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
         );
       case 'video':
         return (
-          <div className="max-w-[400px] max-h-[300px] overflow-hidden rounded">
-            <video 
-              src={message.content}
-              controls
-              className="w-full h-auto"
-              onLoadedMetadata={() => {
-                if (shouldAutoScroll) {
-                  scrollToBottom();
-                }
-              }}
-            />
+          <div className="max-w-[400px] rounded overflow-hidden bg-gray-700">
+            <VideoPlayer src={message.content} />
           </div>
         );
       case 'file':
