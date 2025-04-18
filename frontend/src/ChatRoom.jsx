@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { getMessages } from './api';
 import { useVoiceChat } from './hooks/useVoiceChat';
 import { getSocket } from './socket';
+import { API_URL } from './api';
 
 export default function ChatRoom({ channelId, userId, type, username, avatar }) {
   const [messages, setMessages] = useState([]);
@@ -66,7 +67,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
       formData.append('channelId', channelId);
       
       // Send the image to the server
-      const response = await fetch('/api/upload-image', {
+      const response = await fetch(`${API_URL}/api/upload-image`, {
         method: 'POST',
         body: formData
       });

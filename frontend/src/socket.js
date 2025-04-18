@@ -11,8 +11,8 @@ export const initSocket = () => {
     : import.meta.env.VITE_SOCKET_URL_DEVELOPMENT;
 
   socket = io(SOCKET_URL, {
-    transports: ['websocket'],
-    upgrade: false,
+    transports: ['websocket', 'polling'],
+    upgrade: true,
     auth: { token },
     reconnection: true,
     reconnectionAttempts: Infinity,
