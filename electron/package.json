@@ -1,6 +1,6 @@
 {
   "name": "jemcord",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Electron Application",
   "main": "dist/main.js",
   "scripts": {
@@ -27,11 +27,19 @@
     "win": {
       "target": "portable"
     },
-    "publish": [{
-      "provider": "github",
-      "owner": "spiderkiley4",
-      "repo": "gaming-platform"
-    }]
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "spiderkiley4",
+        "repo": "gaming-platform",
+        "private": false,
+        "releaseType": "release"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/electron-updater/**/*"
+    ]
   },
   "keywords": [],
   "author": "",
@@ -52,6 +60,7 @@
     "wait-on": "^8.0.3"
   },
   "dependencies": {
+    "electron-log": "^5.3.4",
     "electron-updater": "^6.6.2"
   }
 }

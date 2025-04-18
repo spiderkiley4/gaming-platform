@@ -4,6 +4,7 @@ import ChatRoom from './ChatRoom';
 import { initSocket, getSocket } from './socket';
 import AuthForms from './components/AuthForms';
 import { useAuth } from './context/AuthContext';
+import VersionDisplay from './components/VersionDisplay';
 
 export default function App() {
   const { user, logout } = useAuth();
@@ -16,24 +17,23 @@ export default function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [activeTab, setActiveTab] = useState('friends');
 
-  // If not authenticated, show auth forms
-  if (!user) {
-    return <AuthForms />;
-  }
-
   // Fetch channels on initial load
   useEffect(() => {
-    Promise.all([
-      getChannels('text'),
-      getChannels('voice')
-    ]).then(([textRes, voiceRes]) => {
-      setTextChannels(textRes.data);
-      setVoiceChannels(voiceRes.data);
-    });
-  }, []);
+    if (user) {
+      Promise.all([
+        getChannels('text'),
+        getChannels('voice')
+      ]).then(([textRes, voiceRes]) => {
+        setTextChannels(textRes.data);
+        setVoiceChannels(voiceRes.data);
+      });
+    }
+  }, [user]);
 
   // Set up WebSocket connections
   useEffect(() => {
+    if (!user) return;
+
     const socket = getSocket();
     if (!socket) return;
 
@@ -60,7 +60,7 @@ export default function App() {
       socket.off('disconnect');
       socket.off('new_channel');
     };
-  }, []);
+  }, [user]);
 
   const handleCreateChannel = async () => {
     if (!newChannelName.trim()) return;
@@ -72,6 +72,10 @@ export default function App() {
       console.error('Error creating channel', err);
     }
   };
+
+  if (!user) {
+    return <AuthForms />;
+  }
 
   return (
     <div className="p-4 text-white bg-gray-900 min-h-screen relative overflow-hidden">
@@ -220,6 +224,9 @@ export default function App() {
           </div>
         </div>
       </div>
+      
+      {/* Add Version Display */}
+      <VersionDisplay />
     </div>
   );
 }

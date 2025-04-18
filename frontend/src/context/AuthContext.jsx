@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { getCurrentUser, login, register } from '../api';
 import { initSocket, disconnectSocket } from '../socket';
 
@@ -7,6 +7,13 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -14,19 +21,25 @@ export const AuthProvider = ({ children }) => {
       if (token) {
         try {
           const res = await getCurrentUser();
-          setUser(res.data);
-          const socket = initSocket();
-          if (!socket) {
-            throw new Error('Failed to initialize socket');
+          if (mounted.current) {
+            setUser(res.data);
+            const socket = initSocket();
+            if (!socket) {
+              throw new Error('Failed to initialize socket');
+            }
           }
         } catch (err) {
           console.error('Failed to load user:', err);
           localStorage.removeItem('token');
           disconnectSocket();
-          setUser(null);
+          if (mounted.current) {
+            setUser(null);
+          }
         }
       }
-      setLoading(false);
+      if (mounted.current) {
+        setLoading(false);
+      }
     };
 
     loadUser();
@@ -40,10 +53,12 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await login(username, password);
       localStorage.setItem('token', res.data.token);
-      setUser(res.data.user);
-      const socket = initSocket();
-      if (!socket) {
-        throw new Error('Failed to initialize socket');
+      if (mounted.current) {
+        setUser(res.data.user);
+        const socket = initSocket();
+        if (!socket) {
+          throw new Error('Failed to initialize socket');
+        }
       }
       return res.data;
     } catch (err) {
@@ -58,10 +73,12 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await register(username, email, password);
       localStorage.setItem('token', res.data.token);
-      setUser(res.data.user);
-      const socket = initSocket();
-      if (!socket) {
-        throw new Error('Failed to initialize socket');
+      if (mounted.current) {
+        setUser(res.data.user);
+        const socket = initSocket();
+        if (!socket) {
+          throw new Error('Failed to initialize socket');
+        }
       }
       return res.data;
     } catch (err) {
@@ -74,9 +91,11 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     try {
-      localStorage.removeItem('token');
       disconnectSocket();
-      setUser(null);
+      localStorage.removeItem('token');
+      if (mounted.current) {
+        setUser(null);
+      }
     } catch (err) {
       console.error('Logout failed:', err);
     }

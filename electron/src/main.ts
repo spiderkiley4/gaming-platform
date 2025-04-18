@@ -1,14 +1,29 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import * as path from 'path';
 import { autoUpdater } from 'electron-updater';
+import log from 'electron-log';
 
 const isDev = process.env.NODE_ENV === 'development';
+const appVersion = app.getVersion();
 
 console.log('Electron main process started!');
 
 // Configure auto-updater
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.logger = log;
+log.transports.file.level = 'debug';
+
+// Set update server URL if needed
+if (!isDev) {
+    autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: 'spiderkiley4',
+        repo: 'gaming-platform',
+        private: false,
+        releaseType: 'release'
+    });
+}
 
 function createWindow() {
     const mainWindow = new BrowserWindow({
@@ -31,6 +46,11 @@ function createWindow() {
         // In production, load from the frontend build
         mainWindow.loadFile(path.join(__dirname, 'frontend', 'index.html'));
     }
+
+    // Expose version to renderer process
+    mainWindow.webContents.on('did-finish-load', () => {
+        mainWindow.webContents.executeJavaScript(`window.appVersion = '${appVersion}';`);
+    });
 
     return mainWindow;
 }
