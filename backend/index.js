@@ -15,9 +15,7 @@ dotenv.config();
 
 const app = express();
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? ['https://your-production-domain.com'] // Replace with your actual production domain
-    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3001', 'http://10.102.128.82:5173', 'http://47.6.25.173:3001'],
+  origin: '*',  // Allow all origins in development
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -440,6 +438,6 @@ app.post('/api/upload-image', authenticateToken, upload.single('image'), async (
   }
 });
 
-server.listen(process.env.PORT, () => {
-  console.log(`Server listening on port ${process.env.PORT}`);
+server.listen(process.env.PORT, '0.0.0.0', () => {
+  console.log(`Server listening on port ${process.env.PORT} on all interfaces`);
 });
