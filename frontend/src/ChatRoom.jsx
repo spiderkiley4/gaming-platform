@@ -8,39 +8,60 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const socket = getSocket();
   const { isMuted, isConnected, peers, startVoiceChat, toggleMute, disconnect } = useVoiceChat(channelId, socket);
 
+  // Function to check if we're near the bottom
+  const isNearBottom = () => {
+    const container = document.querySelector('.overflow-y-auto');
+    if (!container) return true;
+    
+    const threshold = 100; // pixels from bottom
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+  };
+
+  // Function to handle scroll events
+  const handleScroll = () => {
+    setShouldAutoScroll(isNearBottom());
+  };
+
+  // Function to scroll to bottom
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (shouldAutoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior });
+    }
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    const container = document.querySelector('.overflow-y-auto');
+    if (container) {
+      container.addEventListener('scroll', handleScroll);
+      return () => container.removeEventListener('scroll', handleScroll);
+    }
+  }, []);
 
   useEffect(() => {
     if (type === 'text') {
       socket.emit('join_channel', channelId);
       getMessages(channelId).then(res => {
         setMessages(res.data);
+        // Use instant scroll for initial load
+        setTimeout(() => scrollToBottom('instant'), 0);
       });
 
       socket.on('new_message', (msg) => {
         setMessages((prev) => [...prev, msg]);
+        // Use smooth scroll for new messages
+        setTimeout(() => scrollToBottom(), 0);
       });
 
       return () => socket.off('new_message');
     }
   }, [channelId, type, socket]);
-
-  const sendMessage = () => {
-    if (messageInput.trim()) {
-      socket.emit('send_message', {
-        content: messageInput,
-        channelId
-      });
-      setMessageInput('');
-    }
-  };
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
@@ -58,42 +79,51 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
       return;
     }
     
-    setIsUploading(true);
+    // Store the selected file
+    setSelectedImage(file);
     
-    try {
-      // Create a FormData object to send the file
-      const formData = new FormData();
-      formData.append('image', file);
-      formData.append('channelId', channelId);
-      
-      // Send the image to the server
-      const response = await fetch(`${API_URL}/api/upload-image`, {
-        method: 'POST',
-        body: formData
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to upload image');
+    // Reset the file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const sendMessage = async () => {
+    if (selectedImage) {
+      setIsUploading(true);
+      try {
+        // Create a FormData object to send the file
+        const formData = new FormData();
+        formData.append('image', selectedImage);
+        formData.append('channelId', channelId);
+        
+        // Send the image to the server
+        const response = await fetch(`${API_URL}/api/upload-image`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: formData
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to upload image');
+        }
+        
+        // The backend will handle emitting the message through socket
+        setSelectedImage(null);
+      } catch (error) {
+        console.error('Error uploading image:', error);
+        alert('Failed to upload image. Please try again.');
+      } finally {
+        setIsUploading(false);
       }
-      
-      const data = await response.json();
-      
-      // Emit the image message through socket
+    } else if (messageInput.trim()) {
       socket.emit('send_message', {
-        content: data.imageUrl,
-        channelId,
-        type: 'image'
+        content: messageInput,
+        channelId
       });
-      
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      alert('Failed to upload image. Please try again.');
-    } finally {
-      setIsUploading(false);
-      // Reset the file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      setMessageInput('');
     }
   };
 
@@ -124,6 +154,12 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
             alt="Chat image" 
             className="w-full h-auto object-contain"
             loading="lazy"
+            onLoad={() => {
+              // Only scroll if we're already near the bottom
+              if (shouldAutoScroll) {
+                scrollToBottom();
+              }
+            }}
           />
         </div>
       );
@@ -256,6 +292,12 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
               </svg>
               Uploading...
             </span>
+          ) : selectedImage ? (
+            <span className="flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </span>
           ) : (
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -265,6 +307,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
         <button 
           onClick={sendMessage} 
           className="ml-2 p-2 w-20 bg-blue-500 rounded text-white hover:bg-blue-600"
+          disabled={isUploading || (!messageInput.trim() && !selectedImage)}
         >
           Send
         </button>
