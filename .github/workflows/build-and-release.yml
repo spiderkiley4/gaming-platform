@@ -1,16 +1,32 @@
 name: Build and Release
 
 on:
-  workflow_dispatch:  # Trigger manually
+  workflow_dispatch:
+    inputs:
+      build_desktop:
+        description: 'Build desktop apps'
+        type: boolean
+        default: false
+      build_mobile:
+        description: 'Build mobile app'
+        type: boolean
+        default: false
 
 jobs:
   build-desktop:
     name: Build Desktop Apps
     runs-on: ubuntu-latest
+    if: ${{ inputs.build_desktop }}
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
+      - name: Get desktop version
+        id: get-desktop-version
+        run: |
+          VERSION=$(node -p "require('./electron/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Build inside Docker (with Wine)
         run: |
@@ -27,13 +43,29 @@ jobs:
           name: desktop-artifacts
           path: artifacts/
 
+      - name: Create Desktop Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v${{ steps.get-desktop-version.outputs.version }}
+          name: Desktop Release v${{ steps.get-desktop-version.outputs.version }}
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
   build-mobile:
     name: Build Mobile App
     runs-on: ubuntu-latest
+    if: ${{ inputs.build_mobile }}
 
     steps:
       - name: 📱 Checkout repository
         uses: actions/checkout@v4
+
+      - name: Get mobile version
+        id: get-mobile-version
+        run: |
+          VERSION=$(node -p "require('./mobile/package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: 🏗 Setup Node
         uses: actions/setup-node@v4
@@ -61,50 +93,21 @@ jobs:
       - name: 📲 Download APK
         run: |
           cd mobile
-          mkdir -p ../artifacts
+          mkdir -p ../artifacts-mobile
           BUILD_ID=$(eas build:list --json --limit 1 --platform android --status finished | jq -r '.[0].id')
-          eas build:download --build-id $BUILD_ID --output ../artifacts/app-preview.apk
+          eas build:download --build-id $BUILD_ID --output ../artifacts-mobile/app-preview.apk
 
       - name: Upload mobile artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mobile-artifacts
-          path: artifacts/app-preview.apk
+          path: artifacts-mobile/
 
-  release:
-    name: Create GitHub Release
-    needs: [build-desktop, build-mobile]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Get version
-        id: get-version
-        run: |
-          VERSION=$(node -p "require('./electron/package.json').version")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Download desktop artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: desktop-artifacts
-          path: artifacts/desktop
-
-      - name: Download mobile artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: mobile-artifacts
-          path: artifacts/mobile
-
-      - name: Create Release
+      - name: Create Mobile Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.get-version.outputs.version }}
-          name: Release v${{ steps.get-version.outputs.version }}
-          files: |
-            artifacts/desktop/*
-            artifacts/mobile/*
+          tag_name: mobile-v${{ steps.get-mobile-version.outputs.version }}
+          name: Mobile Release v${{ steps.get-mobile-version.outputs.version }}
+          files: artifacts-mobile/*
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
