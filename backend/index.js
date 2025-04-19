@@ -226,20 +226,33 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
     const protocol = req.secure ? 'https' : 'http';
     const avatarUrl = `${protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
+    // Get current user data first
+    const currentUser = await db.query(
+      'SELECT avatar_url FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
     // Update user's avatar_url in database
     const result = await db.query(
       'UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING id, username, email, avatar_url, created_at',
       [avatarUrl, req.user.id]
     );
 
-    // Delete old avatar file if it exists
-    const oldAvatarUrl = result.rows[0].avatar_url;
-    if (oldAvatarUrl) {
-      const oldFilename = oldAvatarUrl.split('/').pop();
-      const oldFilePath = path.join(uploadsDir, oldFilename);
-      if (fs.existsSync(oldFilePath)) {
-        fs.unlinkSync(oldFilePath);
+    // Try to delete old avatar file if it exists
+    try {
+      const oldAvatarUrl = currentUser.rows[0]?.avatar_url;
+      if (oldAvatarUrl) {
+        const oldFilename = oldAvatarUrl.split('/').pop();
+        if (oldFilename) {
+          const oldFilePath = path.join(uploadsDir, oldFilename);
+          if (fs.existsSync(oldFilePath)) {
+            fs.unlinkSync(oldFilePath);
+          }
+        }
       }
+    } catch (deleteError) {
+      // Log error but don't fail the request
+      console.error('Error deleting old avatar:', deleteError);
     }
 
     res.json({ avatar_url: avatarUrl });
