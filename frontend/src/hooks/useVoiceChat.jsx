@@ -165,11 +165,15 @@ export function useVoiceChat(channelId, socket) {
       if (stream) {
         setPeers((prevPeers) => {
           const newPeers = new Map(prevPeers);
-          newPeers.set(remoteUserId, stream);
+          newPeers.set(remoteUserId, {
+            stream,
+            username: `User ${remoteUserId.slice(0, 4)}`,
+            avatar: undefined
+          });
           return newPeers;
         });
 
-        // Create and manage audio element
+        // Audio element management
         let audioElement = audioElementsRef.current.get(remoteUserId);
         if (!audioElement) {
           audioElement = new Audio();

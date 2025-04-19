@@ -21,6 +21,10 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState(new Map());
   const [offlineUsers, setOfflineUsers] = useState(new Map());
   const [isUserListCollapsed, setIsUserListCollapsed] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(new Map()); // Map of channel ID to unread count
+  const [mentions, setMentions] = useState(new Map()); // Map of channel ID to mention count
+  const [isWindowFocused, setIsWindowFocused] = useState(true);
+  const [isMinimized, setIsMinimized] = useState(false);
   
   const socket = getSocket();
   const { peers, isMuted, isConnected: isVoiceConnected } = useVoiceChat(selectedChannel?.id || 0, socket);
@@ -48,12 +52,42 @@ export default function App() {
       return;
     }
 
+    // Function to handle new messages and update unread counts
+    const handleNewMessage = (message) => {
+      if (message.channel_id !== selectedChannel?.id) {
+        // Update unread count
+        setUnreadMessages(prev => {
+          const newCount = (prev.get(message.channel_id) || 0) + 1;
+          return new Map(prev).set(message.channel_id, newCount);
+        });
+
+        // Check for mentions
+        const mentionRegex = new RegExp(`@${user.username}\\b`, 'i');
+        if (mentionRegex.test(message.content)) {
+          setMentions(prev => {
+            const newCount = (prev.get(message.channel_id) || 0) + 1;
+            return new Map(prev).set(message.channel_id, newCount);
+          });
+
+          // Show browser notification
+          if (Notification.permission === "granted") {
+            new Notification(`${message.username} mentioned you in ${message.channel_name}`, {
+              body: message.content,
+              icon: message.avatar_url || '/favicon.ico'
+            });
+          }
+        }
+      }
+    };
+
     // Ensure socket is connected before setting up listeners
     const setupSocketListeners = () => {
       console.log('Setting up socket listeners');
       setIsConnected(true);
 
       socket.emit('get_online_users'); // Request current online users
+      
+      socket.on('new_message', handleNewMessage);
 
       socket.on('online_users', ({ users }) => {
         console.log('Received online users:', users);
@@ -130,8 +164,70 @@ export default function App() {
       socket.off('online_users');
       socket.off('user_status');
       socket.off('new_channel');
+      socket.off('new_message');
     };
-  }, [user]);
+  }, [user, selectedChannel]);
+
+  // Handle window state changes from electron
+  useEffect(() => {
+    if (window.electron) {
+      window.electron.on('window-state-change', ({ isWindowFocused, isMinimized }) => {
+        setIsWindowFocused(isWindowFocused);
+        setIsMinimized(isMinimized);
+      });
+
+      // Handle channel switch requests from notification clicks
+      window.electron.on('switch-channel', (channelId) => {
+        const channel = [...textChannels, ...voiceChannels].find(ch => ch.id === channelId);
+        if (channel) {
+          setSelectedChannel({ ...channel, type: channel.type });
+        }
+      });
+
+      return () => {
+        window.electron.removeAllListeners('window-state-change');
+        window.electron.removeAllListeners('switch-channel');
+      };
+    }
+  }, [textChannels, voiceChannels]);
+
+  // Function to handle new message and update unread counts
+  const handleNewMessage = (message) => {
+    if (message.channel_id !== selectedChannel?.id) {
+      // Update unread count
+      setUnreadMessages(prev => {
+        const newCount = (prev.get(message.channel_id) || 0) + 1;
+        return new Map(prev).set(message.channel_id, newCount);
+      });
+
+      // Check for mentions
+      const mentionRegex = new RegExp(`@${user.username}\\b`, 'i');
+      if (mentionRegex.test(message.content)) {
+        setMentions(prev => {
+          const newCount = (prev.get(message.channel_id) || 0) + 1;
+          return new Map(prev).set(message.channel_id, newCount);
+        });
+
+        // Show notification based on window state
+        if (!isWindowFocused || isMinimized) {
+          if (window.electron) {
+            // Send to electron main process for native notification
+            window.electron.send('new-message', {
+              title: `${message.username} mentioned you in ${message.channel_name}`,
+              body: message.content,
+              channel: message.channel_id
+            });
+          } else if (Notification.permission === "granted") {
+            // Fallback to web notification
+            new Notification(`${message.username} mentioned you in ${message.channel_name}`, {
+              body: message.content,
+              icon: message.avatar_url || '/favicon.ico'
+            });
+          }
+        }
+      }
+    }
+  };
 
   const handleCreateChannel = async () => {
     if (!newChannelName.trim()) return;
@@ -264,10 +360,35 @@ export default function App() {
                     key={ch.id}
                     className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
                       selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
-                    }`}
-                    onClick={() => setSelectedChannel({ ...ch, type: 'text' })}
+                    } relative flex items-center justify-between`}
+                    onClick={() => {
+                      setSelectedChannel({ ...ch, type: 'text' });
+                      // Clear unread and mentions when selecting channel
+                      setUnreadMessages(prev => {
+                        const newMap = new Map(prev);
+                        newMap.delete(ch.id);
+                        return newMap;
+                      });
+                      setMentions(prev => {
+                        const newMap = new Map(prev);
+                        newMap.delete(ch.id);
+                        return newMap;
+                      });
+                    }}
                   >
-                    # {ch.name}
+                    <div className="flex items-center gap-2">
+                      <span># {ch.name}</span>
+                      {mentions.get(ch.id) > 0 && (
+                        <span className="px-1.5 py-0.5 bg-red-500 text-xs rounded-full">
+                          @{mentions.get(ch.id)}
+                        </span>
+                      )}
+                      {!mentions.get(ch.id) && unreadMessages.get(ch.id) > 0 && (
+                        <span className="px-1.5 py-0.5 bg-blue-500 text-xs rounded-full">
+                          {unreadMessages.get(ch.id)}
+                        </span>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>

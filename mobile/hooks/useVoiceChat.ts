@@ -2,10 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { Socket } from 'socket.io-client';
 
+interface PeerData {
+  stream: MediaStream;
+  username?: string;
+  avatar?: string;
+}
+
 interface VoiceChatState {
   isMuted: boolean;
   isConnected: boolean;
-  peers: Map<string, MediaStream>;
+  peers: Map<string, PeerData>;
   startVoiceChat: () => Promise<void>;
   toggleMute: () => void;
   disconnect: () => void;
@@ -14,7 +20,7 @@ interface VoiceChatState {
 export function useVoiceChat(channelId: number, socket: Socket | null): VoiceChatState {
   const [isMuted, setIsMuted] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
-  const [peers] = useState(new Map<string, MediaStream>());
+  const [peers] = useState(new Map<string, PeerData>());
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef(new Map<string, RTCPeerConnection>());
 
@@ -76,7 +82,11 @@ export function useVoiceChat(channelId: number, socket: Socket | null): VoiceCha
       console.log('Received remote track from', remoteUserId);
       const [stream] = event.streams;
       if (stream) {
-        peers.set(remoteUserId, stream);
+        peers.set(remoteUserId, { 
+          stream,
+          username: `User ${remoteUserId.slice(0, 4)}`,
+          avatar: undefined
+        });
       }
     };
 

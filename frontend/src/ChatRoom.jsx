@@ -12,10 +12,48 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
   const [selectedFile, setSelectedFile] = useState(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [mentionSuggestions, setMentionSuggestions] = useState([]);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [cursorPosition, setCursorPosition] = useState(0);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const inputRef = useRef(null);
   const socket = getSocket();
   const { isMuted, isConnected, peers, startVoiceChat, toggleMute, disconnect } = useVoiceChat(channelId, socket);
+
+  // Get all online users for mention suggestions
+  const [users, setUsers] = useState([]);
+  
+  useEffect(() => {
+    if (!socket) return;
+    
+    // Request online users
+    socket.emit('get_online_users');
+    
+    const handleUsers = ({ users }) => {
+      setUsers(users);
+    };
+    
+    socket.on('online_users', handleUsers);
+    socket.on('user_status', ({ userId, username, status }) => {
+      setUsers(prev => {
+        if (status === 'offline') {
+          return prev.filter(u => u.userId !== userId);
+        } else {
+          const exists = prev.some(u => u.userId === userId);
+          if (!exists) {
+            return [...prev, { userId, username }];
+          }
+          return prev;
+        }
+      });
+    });
+    
+    return () => {
+      socket.off('online_users', handleUsers);
+      socket.off('user_status');
+    };
+  }, [socket]);
 
   // Function to check if we're near the bottom
   const isNearBottom = () => {
@@ -184,6 +222,29 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
     }
   };
 
+  // Function to handle mentions in message content
+  const formatMessageContent = (content, message) => {
+    const parts = content.split(/(@\w+)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('@')) {
+        const username = part.slice(1);
+        return (
+          <span key={index} className="text-blue-400 font-medium bg-blue-500/20 px-1.5 py-0.5 rounded">
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
+
+  // Request notification permissions on component mount
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // Render message content based on type
   const renderMessageContent = (message) => {
     switch (message.type) {
@@ -227,7 +288,11 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
           </div>
         );
       default:
-        return <div className="text-white break-words">{message.content}</div>;
+        return (
+          <div className="text-white break-words">
+            {formatMessageContent(message.content, message)}
+          </div>
+        );
     }
   };
 
@@ -343,48 +408,81 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
     );
   }
 
+  // Handle input changes and mention suggestions
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    const position = e.target.selectionStart;
+    setMessageInput(value);
+    setCursorPosition(position);
+
+    // Check for mention suggestions
+    const beforeCursor = value.slice(0, position);
+    const matches = beforeCursor.match(/@(\w*)$/);
+    
+    if (matches) {
+      const query = matches[1].toLowerCase();
+      setMentionQuery(query);
+      const suggestions = users
+        .filter(u => u.username.toLowerCase().includes(query))
+        .slice(0, 5);
+      setMentionSuggestions(suggestions);
+    } else {
+      setMentionSuggestions([]);
+    }
+  };
+
+  // Handle mention selection
+  const handleMentionSelect = (username) => {
+    const beforeMention = messageInput.slice(0, cursorPosition).replace(/@\w*$/, '');
+    const afterMention = messageInput.slice(cursorPosition);
+    const newValue = `${beforeMention}@${username} ${afterMention}`;
+    setMessageInput(newValue);
+    setMentionSuggestions([]);
+    inputRef.current?.focus();
+  };
+
   return (
     <div className="flex flex-col bg-gray-800 p-4 rounded-lg h-[calc(100vh-140px)]">
       <div className="flex flex-col h-[calc(100vh-100px)] overflow-y-auto">
-        {messages.map((m, index) => {
-          const currentDate = new Date(m.created_at).toDateString();
+        {messages.map((message, index) => {
+          const currentDate = new Date(message.created_at).toDateString();
           const prevDate = index > 0 ? new Date(messages[index - 1].created_at).toDateString() : null;
           const showDateHeader = currentDate !== prevDate;
           
           return (
-            <div key={m.id}>
+            <div key={message.id}>
               {showDateHeader && (
                 <div className="text-center my-4">
                   <span className="bg-gray-700 text-gray-300 px-3 py-1 rounded-full text-sm">
-                    {formatDate(m.created_at)}
+                    {formatDate(message.created_at)}
                   </span>
                 </div>
               )}
-              <div 
-                className={`p-2 mb-2 mr-4 rounded w-full hover:bg-gray-700/60 ${
-                  m.user_id === userId ? 'ml-auto' : 'mr-auto'
-                }`}
-              >
+              <div className={`p-2 mb-2 mr-4 rounded w-full hover:bg-gray-700/60 ${
+                message.user_id === userId ? 'ml-auto' : 'mr-auto'
+              } mt-3`}>
                 <div className="flex items-center gap-2 mb-1">
-                  {m.avatar_url ? (
+                  {message.avatar_url ? (
                     <img 
-                      src={m.avatar_url} 
-                      alt={m.username} 
+                      src={message.avatar_url} 
+                      alt={message.username} 
                       className="w-6 h-6 rounded-full"
                     />
                   ) : (
                     <div className="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">
-                      {m.username ? m.username.charAt(0).toUpperCase() : `U${m.user_id}`}
+                      {message.username ? message.username.charAt(0).toUpperCase() : `U${message.user_id}`}
                     </div>
                   )}
                   <span className="text-sm text-gray-300">
-                    {m.username || `User #${m.user_id}`}
+                    {message.username || `User #${message.user_id}`}
                   </span>
                   <span className="text-xs text-gray-400">
-                    {new Date(m.created_at).toLocaleTimeString()}
+                    {new Date(message.created_at).toLocaleTimeString()}
                   </span>
                 </div>
-                {renderMessageContent(m)}
+                <div>
+                  {renderMessageContent(message)}
+                </div>
               </div>
             </div>
           );
@@ -401,51 +499,86 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
             </button>
           </div>
         )}
-        <input
-          value={messageInput}
-          className="flex-1 p-2 border border-gray-600 bg-gray-700 rounded text-white"
-          onChange={(e) => setMessageInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-          placeholder="Type your message..."
-        />
-        <input
-          type="file"
-          ref={fileInputRef}
-          className="hidden"
-          onChange={handleFileUpload}
-        />
-        <button 
-          onClick={() => fileInputRef.current.click()}
-          className="ml-2 p-2 bg-gray-600 rounded text-white hover:bg-gray-500"
-          disabled={isUploading}
-        >
-          {isUploading ? (
-            <span className="flex items-center">
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Uploading...
-            </span>
-          ) : selectedFile ? (
-            <span className="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </span>
-          ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-            </svg>
+        <div className="relative w-full">
+          {mentionSuggestions.length > 0 && (
+            <div className="absolute bottom-full mb-2 bg-gray-700 rounded shadow-lg max-h-40 overflow-y-auto w-64">
+              {mentionSuggestions.map((user) => (
+                <div
+                  key={user.userId}
+                  className="p-2 hover:bg-gray-600 cursor-pointer flex items-center gap-2"
+                  onClick={() => handleMentionSelect(user.username)}
+                >
+                  {user.avatar_url ? (
+                    <img src={user.avatar_url} alt="" className="w-6 h-6 rounded-full" />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-sm">
+                      {user.username.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <span>{user.username}</span>
+                </div>
+              ))}
+            </div>
           )}
-        </button>
-        <button 
-          onClick={sendMessage} 
-          className="ml-2 p-2 w-20 bg-blue-500 rounded text-white hover:bg-blue-600"
-          disabled={isUploading || (!messageInput.trim() && !selectedFile)}
-        >
-          Send
-        </button>
+          
+          <div className="flex items-center">
+            <input
+              ref={inputRef}
+              value={messageInput}
+              className="flex flex-1 p-2 border border-gray-600 bg-gray-700 rounded text-white"
+              onChange={handleInputChange}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (mentionSuggestions.length > 0) {
+                    handleMentionSelect(mentionSuggestions[0].username);
+                  } else {
+                    sendMessage();
+                  }
+                }
+              }}
+              placeholder="Type your message..."
+            />
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            <button 
+              onClick={() => fileInputRef.current.click()}
+              className="ml-2 p-2 bg-gray-600 rounded text-white hover:bg-gray-500"
+              disabled={isUploading}
+            >
+              {isUploading ? (
+                <span className="flex items-center">
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Uploading...
+                </span>
+              ) : selectedFile ? (
+                <span className="flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              )}
+            </button>
+            <button 
+              onClick={sendMessage} 
+              className="ml-2 p-2 w-20 bg-blue-500 rounded text-white hover:bg-blue-600"
+              disabled={isUploading || (!messageInput.trim() && !selectedFile)}
+            >
+              Send
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, Notification } from 'electron';
 import * as path from 'path';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
@@ -66,6 +66,55 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
+        }
+    });
+
+    let isWindowFocused = true;
+    let isMinimized = false;
+
+    // Track window focus state
+    mainWindow.on('focus', () => {
+        isWindowFocused = true;
+        mainWindow.webContents.send('window-state-change', { isWindowFocused, isMinimized });
+    });
+
+    mainWindow.on('blur', () => {
+        isWindowFocused = false;
+        mainWindow.webContents.send('window-state-change', { isWindowFocused, isMinimized });
+    });
+
+    // Track minimized state
+    mainWindow.on('minimize', () => {
+        isMinimized = true;
+        mainWindow.webContents.send('window-state-change', { isWindowFocused, isMinimized });
+    });
+
+    mainWindow.on('restore', () => {
+        isMinimized = false;
+        mainWindow.webContents.send('window-state-change', { isWindowFocused, isMinimized });
+    });
+
+    // Handle new messages from renderer when window is not focused
+    mainWindow.webContents.ipc.on('new-message', (event, { title, body, channel }) => {
+        if (!isWindowFocused || isMinimized) {
+            // Create native notification
+            const notification = new Notification({
+                title,
+                body,
+                silent: false,
+                icon: path.join(__dirname, '../assets/jemcord.png')
+            });
+
+            notification.on('click', () => {
+                if (mainWindow.isMinimized()) {
+                    mainWindow.restore();
+                }
+                mainWindow.focus();
+                // Tell renderer to switch to the relevant channel
+                mainWindow.webContents.send('switch-channel', channel);
+            });
+
+            notification.show();
         }
     });
 

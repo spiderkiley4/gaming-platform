@@ -4,7 +4,8 @@ on:
   workflow_dispatch:  # Trigger manually
 
 jobs:
-  build:
+  build-desktop:
+    name: Build Desktop Apps
     runs-on: ubuntu-latest
 
     steps:
@@ -23,12 +24,58 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
+          name: desktop-artifacts
           path: artifacts/
+
+  build-mobile:
+    name: Build Mobile App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📱 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🏗 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: 🔨 Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 📦 Install dependencies
+        run: |
+          cd mobile
+          npm install
+
+      - name: 🚀 Build Android app
+        run: |
+          cd mobile
+          eas build --platform android --profile preview --non-interactive --no-wait
+          # Wait for build to complete and download
+          eas build:wait
+
+      - name: 📲 Download APK
+        run: |
+          cd mobile
+          mkdir -p ../artifacts
+          BUILD_ID=$(eas build:list --json --limit 1 --platform android --status finished | jq -r '.[0].id')
+          eas build:download --build-id $BUILD_ID --output ../artifacts/app-preview.apk
+
+      - name: Upload mobile artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-artifacts
+          path: artifacts/app-preview.apk
 
   release:
     name: Create GitHub Release
-    needs: build
+    needs: [build-desktop, build-mobile]
     runs-on: ubuntu-latest
 
     steps:
@@ -41,17 +88,25 @@ jobs:
           VERSION=$(node -p "require('./electron/package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Download artifacts
+      - name: Download desktop artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-artifacts
-          path: artifacts
+          name: desktop-artifacts
+          path: artifacts/desktop
+
+      - name: Download mobile artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: mobile-artifacts
+          path: artifacts/mobile
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.get-version.outputs.version }}
           name: Release v${{ steps.get-version.outputs.version }}
-          files: artifacts/*
+          files: |
+            artifacts/desktop/*
+            artifacts/mobile/*
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}

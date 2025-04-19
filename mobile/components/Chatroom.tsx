@@ -47,53 +47,169 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
     }
   }, [messageInput, userScrolled]);
 
+  // Socket and channel connection management
   useEffect(() => {
     if (!socket || type !== 'text') return;
 
-    // Join channel and fetch messages
-    socket.emit('join_channel', channelId);
-    getMessages(channelId).then((res) => {
-      setMessages(res.data);
-      flatListRef.current?.scrollToEnd({ animated: false });
+    let isCurrentChannel = true;
+    let retryTimeout: NodeJS.Timeout;
+    const startTime = Date.now();
+
+    console.log(`[ChatRoom ${channelId}] Initializing at ${new Date().toISOString()}`);
+    console.log(`[ChatRoom ${channelId}] Initial socket state:`, {
+      connected: socket.connected,
+      disconnected: socket.disconnected,
+      id: socket.id
     });
 
-    // Listen for new messages
-    socket.on('new_message', (msg: Message) => {
-      setMessages((prev) => [...prev, msg]);
-      if (!userScrolled) {
-        requestAnimationFrame(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
+    // Join channel and fetch messages
+    const joinChannel = () => {
+      if (!isCurrentChannel) return;
+      console.log(`[ChatRoom ${channelId}] Joining channel, socket state:`, {
+        connected: socket.connected,
+        id: socket.id,
+        uptime: (Date.now() - startTime) / 1000
+      });
+      socket.emit('join_channel', channelId);
+      
+      // Fetch messages after joining
+      getMessages(channelId).then((res) => {
+        if (isCurrentChannel) {
+          console.log(`[ChatRoom ${channelId}] Fetched ${res.data.length} messages`);
+          setMessages(res.data);
+          setTimeout(() => {
+            if (isCurrentChannel) {
+              flatListRef.current?.scrollToEnd({ animated: false });
+            }
+          }, 100);
+        }
+      }).catch(err => {
+        console.error(`[ChatRoom ${channelId}] Error fetching messages:`, err);
+      });
+    };
+
+    // Handle socket events
+    const handleConnect = () => {
+      console.log(`[ChatRoom ${channelId}] Socket connected. Details:`, {
+        socketId: socket.id,
+        uptime: (Date.now() - startTime) / 1000,
+        transport: socket.io?.engine?.transport?.name
+      });
+      setIsSocketConnected(true);
+      joinChannel();
+    };
+
+    const handleDisconnect = (reason: string) => {
+      console.log(`[ChatRoom ${channelId}] Socket disconnected. Details:`, {
+        reason,
+        lastSocketId: socket.id,
+        uptime: (Date.now() - startTime) / 1000,
+        wasConnected: socket.connected,
+        engineState: socket.io?.engine?.readyState
+      });
+      setIsSocketConnected(false);
+      
+      // Clear any existing retry
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+      
+      // Attempt to reconnect if not an intentional disconnect
+      if (reason !== 'io client disconnect' && isCurrentChannel) {
+        console.log(`[ChatRoom ${channelId}] Scheduling reconnection attempt...`);
+        retryTimeout = setTimeout(() => {
+          if (socket && !socket.connected && isCurrentChannel) {
+            console.log(`[ChatRoom ${channelId}] Attempting reconnection...`);
+            socket.connect();
+          }
+        }, 1000);
+      }
+    };
+
+    // Handle new messages
+    const handleNewMessage = (msg: Message) => {
+      if (isCurrentChannel) {
+        console.log(`[ChatRoom ${channelId}] New message received:`, {
+          messageId: msg.id,
+          userId: msg.user_id,
+          timestamp: new Date(msg.created_at).toISOString()
+        });
+        setMessages((prev) => [...prev, msg]);
+        if (!userScrolled) {
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: true });
+          }, 50);
+        }
+      }
+    };
+
+    // Set up event listeners
+    if (socket.connected) {
+      console.log(`[ChatRoom ${channelId}] Socket already connected, joining immediately`);
+      joinChannel();
+    }
+    
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('new_message', handleNewMessage);
+    socket.on('error', (error) => {
+      console.error(`[ChatRoom ${channelId}] Socket error:`, error);
+    });
+
+    // Log periodic connection status
+    const statusInterval = setInterval(() => {
+      if (isCurrentChannel) {
+        console.log(`[ChatRoom ${channelId}] Connection status:`, {
+          connected: socket.connected,
+          disconnected: socket.disconnected,
+          id: socket.id,
+          uptime: (Date.now() - startTime) / 1000,
+          transport: socket.io?.engine?.transport?.name
         });
       }
-    });
+    }, 10000);
 
+    // Cleanup function
     return () => {
-      socket.off('new_message');
+      console.log(`[ChatRoom ${channelId}] Cleaning up. Final state:`, {
+        connected: socket.connected,
+        disconnected: socket.disconnected,
+        id: socket.id,
+        uptime: (Date.now() - startTime) / 1000
+      });
+      isCurrentChannel = false;
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+      clearInterval(statusInterval);
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('new_message', handleNewMessage);
+      socket.off('error');
     };
   }, [channelId, type, socket, userScrolled]);
 
+  // Remove the AppState effect that's causing disconnections
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active' && socket?.disconnected) {
-        console.log('App active, reconnecting socket');
-        socket.connect();
-      } else if (nextAppState === 'background') {
-        console.log('App in background, disconnecting socket');
-        socket?.disconnect();
-        if (type === 'voice') {
-          disconnect();
+      console.log(`[ChatRoom ${channelId}] App state changed to:`, nextAppState);
+      if (nextAppState === 'active') {
+        if (socket?.disconnected) {
+          console.log(`[ChatRoom ${channelId}] App active, reconnecting socket`);
+          socket.connect();
         }
       }
+      // Don't disconnect when going to background - let socket manager handle this
     });
 
     return () => {
       subscription.remove();
-      socket?.disconnect();
+      // Don't disconnect socket here - let socket manager handle this
       if (type === 'voice') {
         disconnect();
       }
     };
-  }, [socket, type, disconnect]);
+  }, [socket, type, disconnect, channelId]);
 
   useEffect(() => {
     if (!socket) return;
@@ -134,6 +250,31 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
     }
   }, [userScrolled]);
 
+  const formatMessageContent = (content: string) => {
+    const parts = content.split(/(@\w+)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('@')) {
+        return (
+          <ThemedText
+            key={index}
+            style={{
+              color: '#60A5FA', // text-blue-400
+              backgroundColor: 'rgba(59, 130, 246, 0.2)', // bg-blue-500/20
+              paddingHorizontal: 6,
+              paddingVertical: 2,
+              borderRadius: 4,
+              fontWeight: '500',
+            }}
+          >
+            {part}
+          </ThemedText>
+        );
+      }
+      return <ThemedText key={index}>{part}</ThemedText>;
+    });
+  };
+
+  // Update the message rendering to use the formatted content
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <View style={{
       borderWidth: 1,
@@ -177,67 +318,180 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
           {new Date(item.created_at).toLocaleTimeString()}
         </ThemedText>
       </View>
-      <ThemedText>{item.content}</ThemedText>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {formatMessageContent(item.content)}
+      </View>
     </View>
   ), [userId]);
 
   if (type === 'voice') {
     return (
       <View style={{ flex: 1, padding: 20, backgroundColor: '#1F2937' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-          {avatar ? (
-            <Image 
-              source={{ uri: avatar }}
-              style={{ width: 40, height: 40, borderRadius: 20 }}
-            />
-          ) : (
-            <View style={{ 
-              width: 40, 
-              height: 40, 
-              borderRadius: 20,
-              backgroundColor: '#374151',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <ThemedText style={{ fontSize: 18, fontWeight: 'bold' }}>
-                {username.charAt(0).toUpperCase()}
+        {/* Header with user info and controls */}
+        <View style={{ 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          gap: 16, 
+          marginBottom: 20,
+          padding: 16,
+          backgroundColor: '#374151',
+          borderRadius: 8
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+            <View style={{ position: 'relative' }}>
+              {avatar ? (
+                <Image 
+                  source={{ uri: avatar }}
+                  style={{ width: 40, height: 40, borderRadius: 20 }}
+                />
+              ) : (
+                <View style={{ 
+                  width: 40, 
+                  height: 40, 
+                  borderRadius: 20,
+                  backgroundColor: '#4B5563',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <ThemedText style={{ fontSize: 18 }}>
+                    {username.charAt(0).toUpperCase()}
+                  </ThemedText>
+                </View>
+              )}
+              {isConnected && (
+                <View style={{
+                  position: 'absolute',
+                  bottom: -2,
+                  right: -2,
+                  width: 14,
+                  height: 14,
+                  borderRadius: 7,
+                  backgroundColor: isMuted ? '#EF4444' : '#10B981',
+                  borderWidth: 2,
+                  borderColor: '#1F2937'
+                }} />
+              )}
+            </View>
+            <View>
+              <ThemedText style={{ fontWeight: 'bold' }}>{username} (You)</ThemedText>
+              <ThemedText style={{ fontSize: 12, color: '#9CA3AF' }}>
+                {isConnected ? (isMuted ? 'Muted' : 'Speaking') : 'Not Connected'}
               </ThemedText>
             </View>
-          )}
-          <ThemedText>{username}</ThemedText>
-          <TouchableOpacity
-            onPress={isConnected ? disconnect : startVoiceChat}
-            style={{
-              backgroundColor: isConnected ? '#DC2626' : '#059669',
-              padding: 8,
-              borderRadius: 8,
-            }}
-          >
-            <ThemedText style={{ color: 'white' }}>
-              {isConnected ? 'Disconnect' : 'Join Voice'}
-            </ThemedText>
-          </TouchableOpacity>
-          {isConnected && (
+          </View>
+          
+          <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity
-              onPress={toggleMute}
+              onPress={isConnected ? disconnect : startVoiceChat}
               style={{
-                backgroundColor: isMuted ? '#DC2626' : '#3B82F6',
+                backgroundColor: isConnected ? '#DC2626' : '#059669',
                 padding: 8,
                 borderRadius: 8,
+                minWidth: 100,
+                alignItems: 'center'
               }}
             >
               <ThemedText style={{ color: 'white' }}>
-                {isMuted ? 'Unmute' : 'Mute'}
+                {isConnected ? 'Disconnect' : 'Join Voice'}
               </ThemedText>
             </TouchableOpacity>
-          )}
+            {isConnected && (
+              <TouchableOpacity
+                onPress={toggleMute}
+                style={{
+                  backgroundColor: isMuted ? '#DC2626' : '#3B82F6',
+                  padding: 8,
+                  borderRadius: 8,
+                  minWidth: 80,
+                  alignItems: 'center'
+                }}
+              >
+                <ThemedText style={{ color: 'white' }}>
+                  {isMuted ? 'Unmute' : 'Mute'}
+                </ThemedText>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ThemedText style={{ fontSize: 16, color: '#9CA3AF' }}>
-            {isConnected 
-              ? `${peers.size + 1} user${peers.size + 1 !== 1 ? 's' : ''} in voice`
-              : 'Click "Join Voice" to start chatting'}
+
+        {/* Participants list */}
+        <View style={{ flex: 1, backgroundColor: '#374151', borderRadius: 8, padding: 16 }}>
+          <ThemedText style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>
+            Voice Channel Participants
           </ThemedText>
+          
+          <View style={{ flex: 1 }}>
+            {isConnected && peers.size === 0 ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <ThemedText style={{ color: '#9CA3AF' }}>
+                  No other participants in this channel
+                </ThemedText>
+              </View>
+            ) : !isConnected ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <ThemedText style={{ color: '#9CA3AF' }}>
+                  Join voice to see other participants
+                </ThemedText>
+              </View>
+            ) : (
+              <FlatList
+                data={Array.from(peers.entries())}
+                keyExtractor={([peerId]) => peerId}
+                renderItem={({ item: [peerId, peer] }) => (
+                  <View style={{ 
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: 12,
+                    backgroundColor: '#4B5563',
+                    borderRadius: 8,
+                    marginBottom: 8
+                  }}>
+                    <View style={{ position: 'relative' }}>
+                      {peer.avatar ? (
+                        <Image 
+                          source={{ uri: peer.avatar }}
+                          style={{ width: 32, height: 32, borderRadius: 16 }}
+                        />
+                      ) : (
+                        <View style={{ 
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
+                          backgroundColor: '#374151',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <ThemedText style={{ fontSize: 14 }}>
+                            {(peer.username || 'U').charAt(0).toUpperCase()}
+                          </ThemedText>
+                        </View>
+                      )}
+                      <View style={{
+                        position: 'absolute',
+                        bottom: -2,
+                        right: -2,
+                        width: 12,
+                        height: 12,
+                        borderRadius: 6,
+                        backgroundColor: '#10B981',
+                        borderWidth: 2,
+                        borderColor: '#4B5563'
+                      }} />
+                    </View>
+                    <View>
+                      <ThemedText style={{ fontWeight: '500' }}>
+                        {peer.username || `User ${peerId.slice(0, 4)}`}
+                      </ThemedText>
+                      <ThemedText style={{ fontSize: 12, color: '#9CA3AF' }}>
+                        Speaking
+                      </ThemedText>
+                    </View>
+                  </View>
+                )}
+              />
+            )}
+          </View>
         </View>
       </View>
     );

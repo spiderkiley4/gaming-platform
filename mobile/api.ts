@@ -2,20 +2,42 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-// Use localhost for iOS simulator, actual IP for physical devices
-export const API_URL = Platform.OS === 'ios' 
-  ? 'http://47.6.25.173:3001'  
-  : 'http://47.6.25.173:3001'; // Update this IP to match your computer's local IP
+// Use consistent API URL across all platforms
+export const API_URL = 'http://47.6.25.173:3001';
 
 // Create axios instance with auth header interceptor
 const api = axios.create({
-  baseURL: API_URL
+  baseURL: API_URL,
+  timeout: 20000, // Increased timeout
+  headers: {
+    'Content-Type': 'application/json'
+  }
 });
 
+// Add retry logic with exponential backoff
+api.interceptors.response.use(undefined, async (error) => {
+  if (error.code === 'ECONNABORTED' || !error.response) {
+    const retries = error.config._retry || 0;
+    if (retries < 3) { // Increased max retries
+      error.config._retry = retries + 1;
+      // Exponential backoff
+      const backoffDelay = Math.min(1000 * Math.pow(2, retries), 10000);
+      await new Promise(resolve => setTimeout(resolve, backoffDelay));
+      return api(error.config);
+    }
+  }
+  return Promise.reject(error);
+});
+
+// Add token to requests
 api.interceptors.request.use(async (config) => {
-  const token = await AsyncStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  try {
+    const token = await AsyncStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  } catch (error) {
+    console.error('Error setting auth token:', error);
   }
   return config;
 });

@@ -19,21 +19,89 @@ export default function IndexScreen() {
   const [newChannelName, setNewChannelName] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [newChannelType, setNewChannelType] = useState<'text' | 'voice'>('text');
+  const [unreadMessages, setUnreadMessages] = useState<Map<number, number>>(new Map());
+  const [mentions, setMentions] = useState<Map<number, number>>(new Map());
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
+    if (!socket) return;
+
+    const handleConnect = () => {
+      console.log('Socket connected');
+      setIsConnected(true);
+      // Refresh channels on reconnect
+      getChannels().then((res) => setChannels(res.data));
+    };
+
+    const handleDisconnect = () => {
+      console.log('Socket disconnected');
+      setIsConnected(false);
+    };
+
+    const handleNewChannel = (channel: Channel) => {
+      console.log('New channel:', channel);
+      setChannels(prev => [...prev, channel]);
+      Alert.alert('New Channel', `${channel.type === 'voice' ? '🔊' : '#'} ${channel.name} has been created`);
+    };
+
+    const handleMessage = (message: any) => {
+      if (message.channel_id !== selectedChannel?.id) {
+        // Update unread count
+        setUnreadMessages(prev => {
+          const newMap = new Map(prev);
+          const currentCount = newMap.get(message.channel_id) || 0;
+          newMap.set(message.channel_id, currentCount + 1);
+          return newMap;
+        });
+
+        // Check for mentions
+        const mentionRegex = new RegExp(`@${user?.username}\\b`, 'i');
+        if (mentionRegex.test(message.content)) {
+          setMentions(prev => {
+            const newMap = new Map(prev);
+            const currentCount = newMap.get(message.channel_id) || 0;
+            newMap.set(message.channel_id, currentCount + 1);
+            return newMap;
+          });
+
+          // Show notification
+          Alert.alert(
+            `${message.username} mentioned you in ${message.channel_name}`,
+            message.content,
+            [{ text: 'View', onPress: () => setSelectedChannel({ id: message.channel_id, name: message.channel_name, type: 'text' }) }]
+          );
+        }
+      }
+    };
+
+    // Set up event listeners
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('new_channel', handleNewChannel);
+    socket.on('new_message', handleMessage);
+
+    // Initial channel fetch
     getChannels().then((res) => setChannels(res.data));
 
-    if (socket) {
-      socket.on('new_channel', (channel: Channel) => {
-        setChannels(prev => [...prev, channel]);
-        Alert.alert('New Channel', `#${channel.name} has been created`);
-      });
+    // Initial connection state
+    setIsConnected(socket.connected);
 
-      return () => {
-        socket.off('new_channel');
-      };
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('new_channel', handleNewChannel);
+      socket.off('new_message', handleMessage);
+    };
+  }, [socket, selectedChannel?.id, user?.username]);
+
+  useEffect(() => {
+    if (!socket || !selectedChannel) return;
+    
+    // Join the selected channel
+    if (selectedChannel.type === 'text') {
+      socket.emit('join_channel', selectedChannel.id);
     }
-  }, [socket]);
+  }, [socket, selectedChannel]);
 
   const handleCreateChannel = async () => {
     if (!newChannelName.trim()) return;
@@ -78,7 +146,12 @@ export default function IndexScreen() {
               </ThemedText>
             </View>
           )}
-          <ThemedText type="defaultSemiBold">{user?.username}</ThemedText>
+          <View>
+            <ThemedText style={{ fontWeight: 'bold' }}>{user?.username}</ThemedText>
+            <ThemedText style={{ fontSize: 12, color: isConnected ? '#10B981' : '#EF4444' }}>
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </ThemedText>
+          </View>
         </View>
         
         <TouchableOpacity
@@ -108,13 +181,43 @@ export default function IndexScreen() {
                   borderRadius: 8,
                   marginBottom: 8,
                   flexDirection: 'row',
-                  alignItems: 'center'
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
                 }}
-                onPress={() => setSelectedChannel(channel)}
+                onPress={() => {
+                  setSelectedChannel(channel);
+                  // Clear unread and mentions when selecting channel
+                  setUnreadMessages(prev => {
+                    const newMap = new Map(prev);
+                    newMap.delete(channel.id);
+                    return newMap;
+                  });
+                  setMentions(prev => {
+                    const newMap = new Map(prev);
+                    newMap.delete(channel.id);
+                    return newMap;
+                  });
+                }}
               >
                 <ThemedText style={{ marginLeft: 8 }}>
                   {channel.type === 'voice' ? '🔊 ' : '# '}{channel.name}
                 </ThemedText>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {(mentions.get(channel.id) ?? 0) > 0 && (
+                    <View style={{ backgroundColor: '#EF4444', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12 }}>
+                      <ThemedText style={{ color: 'white', fontSize: 12 }}>
+                        @{mentions.get(channel.id)}
+                      </ThemedText>
+                    </View>
+                  )}
+                  {!(mentions.get(channel.id) ?? 0) && (unreadMessages.get(channel.id) ?? 0) > 0 && (
+                    <View style={{ backgroundColor: '#3B82F6', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12 }}>
+                      <ThemedText style={{ color: 'white', fontSize: 12 }}>
+                        {unreadMessages.get(channel.id)}
+                      </ThemedText>
+                    </View>
+                  )}
+                </View>
               </TouchableOpacity>
             ))}
 
@@ -135,7 +238,7 @@ export default function IndexScreen() {
             </TouchableOpacity>
 
             {showForm && (
-              <ThemedView style={{ marginTop: 12, gap: 8, backgroundColor: '#1F2937' }}>
+              <ThemedView style={{ marginTop: 12, gap: 8 }}>
                 <TextInput
                   style={{
                     backgroundColor: '#374151',
