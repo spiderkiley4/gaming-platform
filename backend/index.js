@@ -499,7 +499,8 @@ app.post('/api/upload-file', authenticateToken, upload.single('file'), async (re
     // Emit the new message to all users in the channel
     io.to(`channel-${channelId}`).emit('new_message', message);
 
-    res.json({ fileUrl, message });
+    // Only send success status, no need to send the message again since it will come through socket
+    res.json({ success: true });
   } catch (error) {
     console.error('Error uploading file:', error);
     // Delete the uploaded file if there was an error

@@ -8,6 +8,7 @@ export function useVoiceChat(channelId, socket) {
   const peerConnectionsRef = useRef(new Map());
   const audioElementsRef = useRef(new Map());
   const pendingAnswersRef = useRef(new Map());
+  const pendingIceCandidatesRef = useRef(new Map());
 
   const waitForSignalingState = async (peerConnection, expectedState, timeout = 5000) => {
     if (peerConnection.signalingState === expectedState) {
@@ -57,6 +58,9 @@ export function useVoiceChat(channelId, socket) {
         { urls: 'stun:stun1.l.google.com:19302' },
       ],
     });
+
+    // Initialize pending ICE candidates array
+    pendingIceCandidatesRef.current.set(remoteUserId, []);
 
     peerConnection.onconnectionstatechange = () => {
       console.log(`Connection state for ${remoteUserId}:`, peerConnection.connectionState);
@@ -119,6 +123,42 @@ export function useVoiceChat(channelId, socket) {
       }
     };
 
+    // Process any pending ICE candidates for this peer
+    const processPendingCandidates = async () => {
+      const pendingCandidates = pendingIceCandidatesRef.current.get(remoteUserId) || [];
+      console.log(`Processing ${pendingCandidates.length} pending ICE candidates for`, remoteUserId);
+      
+      for (const candidate of pendingCandidates) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          console.log('Added pending ICE candidate for:', remoteUserId);
+        } catch (err) {
+          console.error('Error adding pending ICE candidate:', err);
+        }
+      }
+      
+      // Clear pending candidates
+      pendingIceCandidatesRef.current.set(remoteUserId, []);
+    };
+
+    peerConnection.addEventListener('signalingstatechange', () => {
+      console.log(`Signaling state for ${remoteUserId}:`, peerConnection.signalingState);
+      
+      if (peerConnection.signalingState === 'stable') {
+        // Process pending ICE candidates when we reach stable state
+        processPendingCandidates();
+        
+        // Process any pending answers
+        const pendingAnswer = pendingAnswersRef.current.get(remoteUserId);
+        if (pendingAnswer) {
+          console.log('Processing pending answer for:', remoteUserId);
+          pendingAnswersRef.current.delete(remoteUserId);
+          peerConnection.setRemoteDescription(new RTCSessionDescription(pendingAnswer))
+            .catch(err => console.error('Error processing pending answer:', err));
+        }
+      }
+    });
+
     peerConnection.ontrack = (event) => {
       console.log('Received remote track', event.track.kind, 'from', remoteUserId);
       const stream = event.streams[0];
@@ -167,6 +207,8 @@ export function useVoiceChat(channelId, socket) {
       connection.close();
     });
     peerConnectionsRef.current.clear();
+    pendingIceCandidatesRef.current.clear();
+    pendingAnswersRef.current.clear();
 
     // Clean up audio elements
     audioElementsRef.current.forEach((audio) => {
@@ -369,13 +411,27 @@ export function useVoiceChat(channelId, socket) {
 
     const handleIceCandidate = async ({ candidate, from }) => {
       const peerConnection = peerConnectionsRef.current.get(from);
-      if (peerConnection) {
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-          console.log('Added ICE candidate from:', from);
-        } catch (err) {
-          console.error('Error adding ICE candidate:', err);
-        }
+      if (!peerConnection) {
+        console.log('No peer connection yet for ICE candidate from', from);
+        // Queue the ICE candidate
+        const pendingCandidates = pendingIceCandidatesRef.current.get(from) || [];
+        pendingCandidatesRef.current.set(from, [...pendingCandidates, candidate]);
+        return;
+      }
+
+      // If we don't have a remote description yet, queue the candidate
+      if (!peerConnection.remoteDescription) {
+        console.log('Remote description not set yet, queueing ICE candidate from', from);
+        const pendingCandidates = pendingIceCandidatesRef.current.get(from) || [];
+        pendingIceCandidatesRef.current.set(from, [...pendingCandidates, candidate]);
+        return;
+      }
+
+      try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log('Added ICE candidate from:', from);
+      } catch (err) {
+        console.error('Error adding ICE candidate:', err);
       }
     };
 

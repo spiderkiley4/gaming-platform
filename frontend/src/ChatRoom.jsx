@@ -54,84 +54,46 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
     }
   }, [channelId]);
 
-  // Handle message loading and socket events
+  // Message handling and socket events
   useEffect(() => {
-    if (type === 'text') {
-      let isCurrentChannel = true;
+    if (!socket || type !== 'text') return;
 
-      // Join channel
-      socket.emit('join_channel', channelId);
-      
-      // Load messages without clearing previous ones immediately
-      getMessages(channelId).then(res => {
-        if (isCurrentChannel) {
-          setMessages(res.data);
-          setTimeout(() => {
-            if (isCurrentChannel) {
-              scrollToBottom();
-              setIsInitialLoad(false);
-            }
-          }, 100);
-        }
-      });
+    let isCurrentChannel = true;
 
-      const handleNewMessage = (msg) => {
-        if (isCurrentChannel) {
-          setMessages(prev => [...prev, msg]);
-          setTimeout(() => scrollToBottom(), 50);
-        }
-      };
-
-      socket.on('new_message', handleNewMessage);
-
-      // Cleanup function
-      return () => {
-        isCurrentChannel = false;
-        socket.off('new_message', handleNewMessage);
-      };
-    }
-  }, [channelId, type, socket]);
-
-  // Reset input state only (not messages) when changing channels
-  useEffect(() => {
-    setMessageInput('');
-    setSelectedFile(null);
-    setShouldAutoScroll(true);
-    setIsInitialLoad(true);
-  }, [channelId]);
-
-  // Enhanced initial load effect
-  useLayoutEffect(() => {
-    if (messages.length > 0 && isInitialLoad) {
-      scrollToBottom();
-      setIsInitialLoad(false);
-    }
-  }, [messages, isInitialLoad]);
-
-  // Improved message reception handling
-  useEffect(() => {
-    if (type === 'text') {
-      // Leave previous channel if any
-      socket.emit('join_channel', channelId);
-      
-      getMessages(channelId).then(res => {
+    // Join channel
+    socket.emit('join_channel', channelId);
+    
+    // Load initial messages
+    getMessages(channelId).then(res => {
+      if (isCurrentChannel) {
         setMessages(res.data);
         // Force scroll to bottom on initial load
-        setTimeout(() => scrollToBottom(), 100);
-      });
+        setTimeout(() => {
+          if (isCurrentChannel) {
+            scrollToBottom();
+            setIsInitialLoad(false);
+          }
+        }, 100);
+      }
+    });
 
-      const handleNewMessage = (msg) => {
-        setMessages((prev) => [...prev, msg]);
+    // Setup message handler
+    const handleNewMessage = (msg) => {
+      if (isCurrentChannel) {
+        setMessages(prev => [...prev, msg]);
         // Add small delay to ensure content is rendered
         setTimeout(() => scrollToBottom(), 50);
-      };
+      }
+    };
 
-      socket.on('new_message', handleNewMessage);
+    // Subscribe to new messages
+    socket.on('new_message', handleNewMessage);
 
-      return () => {
-        socket.off('new_message', handleNewMessage);
-      };
-    }
+    // Cleanup function
+    return () => {
+      isCurrentChannel = false;
+      socket.off('new_message', handleNewMessage);
+    };
   }, [channelId, type, socket]);
 
   // Reset state when channel changes
