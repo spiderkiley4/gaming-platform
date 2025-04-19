@@ -23,12 +23,13 @@ if (process.platform === 'win32') {
     // Ensure desktop file is updated after auto-update
     autoUpdater.on('update-downloaded', (info) => {
         try {
+            const appPath = app.getPath('exe');
             const desktopEntry = `[Desktop Entry]
 Name=${app.getName()}
-Exec=${process.execPath} %U
+Exec="${appPath}" %U
 Terminal=false
 Type=Application
-Icon=${path.join(path.dirname(process.execPath), 'resources', 'assets', 'jemcord.png')}
+Icon=${path.join(path.dirname(appPath), 'resources', 'assets', 'jemcord.png')}
 StartupWMClass=${app.getName()}
 Comment=Gaming Platform
 Categories=Game;`;

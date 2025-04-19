@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getChannels, createChannel } from './api';
+import { API_URL } from './api';  // Add API_URL import
 import ChatRoom from './ChatRoom';
 import { initSocket, getSocket } from './socket';
 import AuthForms from './components/AuthForms';
@@ -8,7 +9,7 @@ import VersionDisplay from './components/VersionDisplay';
 import { useVoiceChat } from './hooks/useVoiceChat';
 
 export default function App() {
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth();
   const [textChannels, setTextChannels] = useState([]);
   const [voiceChannels, setVoiceChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
