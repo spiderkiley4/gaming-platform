@@ -253,15 +253,6 @@ io.on('connection', (socket) => {
     status: 'online' 
   });
 
-  // Send current online users to the newly connected user
-  const onlineUsers = Array.from(io.sockets.sockets.values()).map(s => ({
-    userId: s.user.id,
-    username: s.user.username,
-    avatar_url: s.user.avatar_url,
-    status: 'online'
-  }));
-  socket.emit('online_users', { users: onlineUsers });
-
   // Handle request for current users
   socket.on('get_online_users', async () => {
     try {
@@ -271,12 +262,15 @@ io.on('connection', (socket) => {
       );
       
       // Map all users with their current status
-      const allUsers = result.rows.map(user => ({
-        userId: user.id,
-        username: user.username,
-        avatar_url: user.avatar_url,
-        status: userStatus.get(user.id)?.status || 'offline'
-      }));
+      const allUsers = result.rows.map(user => {
+        const status = userStatus.get(user.id);
+        return {
+          userId: user.id,
+          username: user.username,
+          avatar_url: user.avatar_url,
+          status: status ? status.status : 'offline'
+        };
+      });
 
       socket.emit('online_users', { users: allUsers });
     } catch (error) {
