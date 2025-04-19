@@ -217,6 +217,9 @@ const io = new Server(server, {
   allowEIO3: true // Allow Engine.IO v3 clients
 });
 
+// Track all users and their status
+const userStatus = new Map();
+
 // Socket middleware to authenticate connections
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
@@ -234,6 +237,14 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.user.username);
   
+  // Add user to tracking
+  userStatus.set(socket.user.id, {
+    userId: socket.user.id,
+    username: socket.user.username,
+    avatar_url: socket.user.avatar_url,
+    status: 'online'
+  });
+  
   // Track user connection
   socket.broadcast.emit('user_status', { 
     userId: socket.user.id, 
@@ -250,6 +261,28 @@ io.on('connection', (socket) => {
     status: 'online'
   }));
   socket.emit('online_users', { users: onlineUsers });
+
+  // Handle request for current users
+  socket.on('get_online_users', async () => {
+    try {
+      // Get all users from database
+      const result = await db.query(
+        'SELECT id, username, avatar_url FROM users'
+      );
+      
+      // Map all users with their current status
+      const allUsers = result.rows.map(user => ({
+        userId: user.id,
+        username: user.username,
+        avatar_url: user.avatar_url,
+        status: userStatus.get(user.id)?.status || 'offline'
+      }));
+
+      socket.emit('online_users', { users: allUsers });
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  });
 
   socket.on('join_channel', (channelId) => {
     socket.join(`channel-${channelId}`);
@@ -360,9 +393,19 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.user.username);
+    
+    // Update user status to offline
+    userStatus.set(socket.user.id, {
+      userId: socket.user.id,
+      username: socket.user.username,
+      avatar_url: socket.user.avatar_url,
+      status: 'offline'
+    });
+    
     io.emit('user_status', { 
       userId: socket.user.id, 
       username: socket.user.username,
+      avatar_url: socket.user.avatar_url,
       status: 'offline' 
     });
   });
