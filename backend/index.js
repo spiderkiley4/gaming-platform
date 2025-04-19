@@ -14,12 +14,16 @@ import fs from 'fs';
 dotenv.config();
 
 const app = express();
-app.use(cors({
-  origin: '*',  // Allow all origins in development
+
+// Configure CORS for both Express and Socket.IO
+const corsOptions = {
+  origin: ['http://47.6.25.173:3001', 'http://localhost:3001'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization']
-}));
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Trust first proxy for secure connection detection
@@ -276,13 +280,13 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
 // Socket.io setup with authentication
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { 
-    origin: true, // Allow all origins in development
-    methods: ["GET", "POST"],
-    credentials: true
-  },
-  transports: ['websocket', 'polling'], // Allow both WebSocket and polling
-  allowEIO3: true // Allow Engine.IO v3 clients
+  cors: corsOptions,
+  allowEIO3: true,
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  connectTimeout: 20000,
+  maxHttpBufferSize: 1e8
 });
 
 // Track all users and their status
@@ -296,14 +300,17 @@ io.use((socket, next) => {
   }
 
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) return next(new Error('Invalid token'));
+    if (err) {
+      console.error('Socket auth error:', err);
+      return next(new Error('Invalid token'));
+    }
     socket.user = decoded;
     next();
   });
 });
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.user.username);
+  console.log('User connected:', socket.user.username, socket.id);
   
   // Add user to tracking
   userStatus.set(socket.user.id, {
@@ -315,7 +322,7 @@ io.on('connection', (socket) => {
   
   // Track user connection
   socket.broadcast.emit('user_status', { 
-    userId: socket.user.id, 
+    userId: socket.user.id,
     username: socket.user.username,
     avatar_url: socket.user.avatar_url,
     status: 'online' 
@@ -324,12 +331,10 @@ io.on('connection', (socket) => {
   // Handle request for current users
   socket.on('get_online_users', async () => {
     try {
-      // Get all users from database
       const result = await db.query(
         'SELECT id, username, avatar_url FROM users'
       );
       
-      // Map all users with their current status
       const allUsers = result.rows.map(user => {
         const status = userStatus.get(user.id);
         return {
@@ -343,6 +348,7 @@ io.on('connection', (socket) => {
       socket.emit('online_users', { users: allUsers });
     } catch (error) {
       console.error('Error fetching users:', error);
+      socket.emit('error', { message: 'Failed to fetch users' });
     }
   });
 
@@ -453,8 +459,8 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.user.username);
+  socket.on('disconnect', (reason) => {
+    console.log('User disconnected:', socket.user.username, 'Reason:', reason);
     
     // Update user status to offline
     userStatus.set(socket.user.id, {
