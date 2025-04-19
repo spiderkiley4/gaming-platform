@@ -11,7 +11,7 @@
     "watch": "tsc -w",
     "start": "npm run build && cross-env NODE_ENV=production nodemon --watch main.js --exec electron .",
     "dev": "concurrently \"cd ../frontend && npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development nodemon --watch main.js --exec electron .",
-    "package": "npm run build && electron-builder --linux AppImage --win portable --x64",
+    "package": "npm run build && electron-builder --linux AppImage --win nsis --x64",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "build": {
