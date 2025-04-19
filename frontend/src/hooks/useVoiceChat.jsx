@@ -7,6 +7,30 @@ export function useVoiceChat(channelId, socket) {
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map());
   const audioElementsRef = useRef(new Map());
+  const pendingAnswersRef = useRef(new Map());
+
+  const waitForSignalingState = async (peerConnection, expectedState, timeout = 5000) => {
+    if (peerConnection.signalingState === expectedState) {
+      return true;
+    }
+
+    return new Promise((resolve) => {
+      const checkState = () => {
+        if (peerConnection.signalingState === expectedState) {
+          clearTimeout(timeoutId);
+          resolve(true);
+          return;
+        }
+      };
+
+      const timeoutId = setTimeout(() => {
+        peerConnection.removeEventListener('signalingstatechange', checkState);
+        resolve(false);
+      }, timeout);
+
+      peerConnection.addEventListener('signalingstatechange', checkState);
+    });
+  };
 
   const createPeerConnection = (remoteUserId) => {
     console.log('Creating peer connection for', remoteUserId);
@@ -58,6 +82,21 @@ export function useVoiceChat(channelId, socket) {
 
     peerConnection.oniceconnectionstatechange = () => {
       console.log(`ICE connection state for ${remoteUserId}:`, peerConnection.iceConnectionState);
+    };
+
+    peerConnection.onsignalingstatechange = () => {
+      console.log(`Signaling state for ${remoteUserId}:`, peerConnection.signalingState);
+      
+      // Process any pending answers when we return to stable state
+      if (peerConnection.signalingState === 'stable') {
+        const pendingAnswer = pendingAnswersRef.current.get(remoteUserId);
+        if (pendingAnswer) {
+          console.log('Processing pending answer for:', remoteUserId);
+          pendingAnswersRef.current.delete(remoteUserId);
+          peerConnection.setRemoteDescription(new RTCSessionDescription(pendingAnswer))
+            .catch(err => console.error('Error processing pending answer:', err));
+        }
+      }
     };
 
     // Only set up negotiation if we have a local stream
@@ -279,9 +318,20 @@ export function useVoiceChat(channelId, socket) {
           return;
         }
 
+        // Wait for stable state before setting remote description
+        const isStable = await waitForSignalingState(peerConnection, 'stable');
+        if (!isStable) {
+          console.error('Timed out waiting for stable state');
+          return;
+        }
+
         await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
+        
+        // Small delay to ensure local description is set
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
         console.log('Sending answer to:', from);
         socket.emit('voice_answer', { answer, to: from });
       } catch (err) {
@@ -292,14 +342,28 @@ export function useVoiceChat(channelId, socket) {
     const handleVoiceAnswer = async ({ answer, from }) => {
       console.log('Received answer from:', from);
       const peerConnection = peerConnectionsRef.current.get(from);
-      if (peerConnection) {
-        try {
-          await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-        } catch (err) {
-          console.error('Error setting remote description:', err);
-        }
-      } else {
+      if (!peerConnection) {
         console.error('No peer connection found for', from);
+        return;
+      }
+
+      try {
+        if (peerConnection.signalingState === 'have-local-offer') {
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        } else {
+          console.log('Queueing answer for later processing');
+          pendingAnswersRef.current.set(from, answer);
+          
+          // Set a timeout to clear pending answer if not processed
+          setTimeout(() => {
+            if (pendingAnswersRef.current.has(from)) {
+              console.warn('Clearing unprocessed pending answer for:', from);
+              pendingAnswersRef.current.delete(from);
+            }
+          }, 10000);
+        }
+      } catch (err) {
+        console.error('Error in answer handling:', err);
       }
     };
 

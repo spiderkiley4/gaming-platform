@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { getMessages } from './api';
 import { useVoiceChat } from './hooks/useVoiceChat';
 import { getSocket } from './socket';
@@ -11,6 +11,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const socket = getSocket();
@@ -20,49 +21,127 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
   const isNearBottom = () => {
     const container = document.querySelector('.overflow-y-auto');
     if (!container) return true;
-    
-    const threshold = 100; // pixels from bottom
+    const threshold = 150;
     return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
-  };
-
-  // Function to handle scroll events
-  const handleScroll = () => {
-    setShouldAutoScroll(isNearBottom());
   };
 
   // Function to scroll to bottom
   const scrollToBottom = (behavior = 'smooth') => {
-    if (shouldAutoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior });
+    const container = document.querySelector('.overflow-y-auto');
+    if (container && (shouldAutoScroll || isInitialLoad)) {
+      if (isInitialLoad) {
+        container.scrollTop = container.scrollHeight;
+      } else {
+        messagesEndRef.current?.scrollIntoView({ behavior });
+      }
     }
   };
 
+  // Handle scroll events
+  const handleScroll = () => {
+    const shouldScroll = isNearBottom();
+    if (shouldScroll !== shouldAutoScroll) {
+      setShouldAutoScroll(shouldScroll);
+    }
+  };
+
+  // Attach scroll listener
   useEffect(() => {
     const container = document.querySelector('.overflow-y-auto');
     if (container) {
       container.addEventListener('scroll', handleScroll);
       return () => container.removeEventListener('scroll', handleScroll);
     }
-  }, []);
+  }, [channelId]);
 
+  // Handle message loading and socket events
   useEffect(() => {
     if (type === 'text') {
+      let isCurrentChannel = true;
+
+      // Join channel
       socket.emit('join_channel', channelId);
+      
+      // Load messages without clearing previous ones immediately
       getMessages(channelId).then(res => {
-        setMessages(res.data);
-        // Use instant scroll for initial load
-        setTimeout(() => scrollToBottom('instant'), 0);
+        if (isCurrentChannel) {
+          setMessages(res.data);
+          setTimeout(() => {
+            if (isCurrentChannel) {
+              scrollToBottom();
+              setIsInitialLoad(false);
+            }
+          }, 100);
+        }
       });
 
-      socket.on('new_message', (msg) => {
-        setMessages((prev) => [...prev, msg]);
-        // Use smooth scroll for new messages
-        setTimeout(() => scrollToBottom(), 0);
-      });
+      const handleNewMessage = (msg) => {
+        if (isCurrentChannel) {
+          setMessages(prev => [...prev, msg]);
+          setTimeout(() => scrollToBottom(), 50);
+        }
+      };
 
-      return () => socket.off('new_message');
+      socket.on('new_message', handleNewMessage);
+
+      // Cleanup function
+      return () => {
+        isCurrentChannel = false;
+        socket.off('new_message', handleNewMessage);
+      };
     }
   }, [channelId, type, socket]);
+
+  // Reset input state only (not messages) when changing channels
+  useEffect(() => {
+    setMessageInput('');
+    setSelectedFile(null);
+    setShouldAutoScroll(true);
+    setIsInitialLoad(true);
+  }, [channelId]);
+
+  // Enhanced initial load effect
+  useLayoutEffect(() => {
+    if (messages.length > 0 && isInitialLoad) {
+      scrollToBottom();
+      setIsInitialLoad(false);
+    }
+  }, [messages, isInitialLoad]);
+
+  // Improved message reception handling
+  useEffect(() => {
+    if (type === 'text') {
+      // Leave previous channel if any
+      socket.emit('join_channel', channelId);
+      
+      getMessages(channelId).then(res => {
+        setMessages(res.data);
+        // Force scroll to bottom on initial load
+        setTimeout(() => scrollToBottom(), 100);
+      });
+
+      const handleNewMessage = (msg) => {
+        setMessages((prev) => [...prev, msg]);
+        // Add small delay to ensure content is rendered
+        setTimeout(() => scrollToBottom(), 50);
+      };
+
+      socket.on('new_message', handleNewMessage);
+
+      return () => {
+        socket.off('new_message', handleNewMessage);
+      };
+    }
+  }, [channelId, type, socket]);
+
+  // Reset state when channel changes
+  useEffect(() => {
+    setMessages([]);
+    setMessageInput('');
+    setShouldAutoScroll(true);
+    setIsInitialLoad(true);
+    setSelectedFile(null);
+  }, [channelId]);
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
@@ -193,7 +272,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
   if (type === 'voice') {
     return (
       <div className="flex flex-col bg-gray-800 p-4 rounded-lg">
-        <div className="flex items-center gap-4 mb-4 p-4 bg-gray-700 rounded">
+        <div className="flex items-center justify-between mb-4 p-4 bg-gray-700 rounded">
           <div className="flex items-center gap-2">
             {avatar ? (
               <img 
@@ -208,16 +287,16 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
             )}
             <span className="text-gray-300">{username}</span>
           </div>
-          <button
-            onClick={isConnected ? disconnect : startVoiceChat}
-            className={`p-2 rounded text-white ${
-              isConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
-            }`}
-          >
-            {isConnected ? 'Disconnect' : 'Join Voice'}
-          </button>
-          {isConnected && (
-            <>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={isConnected ? disconnect : startVoiceChat}
+              className={`p-2 rounded text-white ${
+                isConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
+              }`}
+            >
+              {isConnected ? 'Disconnect' : 'Join Voice'}
+            </button>
+            {isConnected && (
               <button
                 onClick={toggleMute}
                 className={`p-2 rounded text-white ${
@@ -226,14 +305,77 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
               >
                 {isMuted ? 'Unmute' : 'Mute'}
               </button>
-              <span className="text-gray-400">
-                {peers.size + 1} user{peers.size + 1 !== 1 ? 's' : ''} in voice
-              </span>
-            </>
-          )}
+            )}
+          </div>
         </div>
-        <div className="text-center text-gray-400 mt-4">
-          {isConnected ? 'Voice chat active' : 'Click "Join Voice" to start chatting'}
+
+        <div className="flex-1 p-4 bg-gray-700 rounded">
+          <h3 className="text-lg font-semibold mb-4">Voice Channel Participants</h3>
+          <div className="space-y-3">
+            {/* Current user */}
+            <div className="flex items-center gap-3 p-2 bg-gray-600 rounded">
+              <div className="relative">
+                {avatar ? (
+                  <img 
+                    src={avatar} 
+                    alt={username} 
+                    className="w-10 h-10 rounded-full"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
+                    {username.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                {isConnected && (
+                  <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-gray-700 ${
+                    isMuted ? 'bg-red-500' : 'bg-green-500'
+                  }`}></div>
+                )}
+              </div>
+              <div>
+                <div className="font-medium">{username} (You)</div>
+                <div className="text-sm text-gray-400">
+                  {isConnected ? (isMuted ? 'Muted' : 'Speaking') : 'Not Connected'}
+                </div>
+              </div>
+            </div>
+
+            {/* Other participants */}
+            {Array.from(peers.entries()).map(([peerId, peer]) => (
+              <div key={peerId} className="flex items-center gap-3 p-2 bg-gray-600 rounded">
+                <div className="relative">
+                  {peer.avatar ? (
+                    <img 
+                      src={peer.avatar} 
+                      alt={peer.username || 'User'} 
+                      className="w-10 h-10 rounded-full"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
+                      {(peer.username || 'U').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 border-2 border-gray-700"></div>
+                </div>
+                <div>
+                  <div className="font-medium">{peer.username || `User ${peerId.slice(0, 4)}`}</div>
+                  <div className="text-sm text-gray-400">Speaking</div>
+                </div>
+              </div>
+            ))}
+
+            {isConnected && peers.size === 0 && (
+              <div className="text-center text-gray-400 py-4">
+                No other participants in this channel
+              </div>
+            )}
+
+            {!isConnected && (
+              <div className="text-center text-gray-400 py-4">
+                Join voice to see other participants
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );

@@ -5,6 +5,7 @@ import { initSocket, getSocket } from './socket';
 import AuthForms from './components/AuthForms';
 import { useAuth } from './context/AuthContext';
 import VersionDisplay from './components/VersionDisplay';
+import { useVoiceChat } from './hooks/useVoiceChat';
 
 export default function App() {
   const { user, logout } = useAuth();
@@ -16,6 +17,12 @@ export default function App() {
   const [newChannelType, setNewChannelType] = useState('text');
   const [isConnected, setIsConnected] = useState(false);
   const [activeTab, setActiveTab] = useState('friends');
+  const [onlineUsers, setOnlineUsers] = useState(new Map());
+  const [offlineUsers, setOfflineUsers] = useState(new Map());
+  const [isUserListCollapsed, setIsUserListCollapsed] = useState(false);
+  
+  const socket = getSocket();
+  const { peers, isMuted, isConnected: isVoiceConnected } = useVoiceChat(selectedChannel?.id || 0, socket);
 
   // Fetch channels on initial load
   useEffect(() => {
@@ -35,29 +42,92 @@ export default function App() {
     if (!user) return;
 
     const socket = getSocket();
-    if (!socket) return;
+    if (!socket) {
+      console.log('No socket connection available');
+      return;
+    }
+
+    // Ensure socket is connected before setting up listeners
+    const setupSocketListeners = () => {
+      console.log('Setting up socket listeners');
+      setIsConnected(true);
+
+      socket.emit('get_online_users'); // Request current online users
+
+      socket.on('online_users', ({ users }) => {
+        console.log('Received online users:', users);
+        const onlineMap = new Map();
+        const offlineMap = new Map();
+        
+        users.forEach(u => {
+          if (u.status === 'online') {
+            onlineMap.set(u.userId, u);
+          } else {
+            offlineMap.set(u.userId, u);
+          }
+        });
+        
+        setOnlineUsers(onlineMap);
+        setOfflineUsers(offlineMap);
+      });
+
+      socket.on('user_status', ({ userId, username, avatar_url, status }) => {
+        console.log('User status update:', userId, status);
+        if (status === 'online') {
+          setOnlineUsers(prev => {
+            const newUsers = new Map(prev);
+            newUsers.set(userId, { userId, username, avatar_url, status });
+            return newUsers;
+          });
+          setOfflineUsers(prev => {
+            const newUsers = new Map(prev);
+            newUsers.delete(userId);
+            return newUsers;
+          });
+        } else {
+          setOfflineUsers(prev => {
+            const newUsers = new Map(prev);
+            newUsers.set(userId, { userId, username, avatar_url, status: 'offline' });
+            return newUsers;
+          });
+          setOnlineUsers(prev => {
+            const newUsers = new Map(prev);
+            newUsers.delete(userId);
+            return newUsers;
+          });
+        }
+      });
+
+      socket.on('new_channel', (channel) => {
+        if (channel.type === 'text') {
+          setTextChannels(prev => [...prev, channel]);
+        } else if (channel.type === 'voice') {
+          setVoiceChannels(prev => [...prev, channel]);
+        }
+      });
+    };
 
     socket.on('connect', () => {
       console.log('Connected to server');
-      setIsConnected(true);
+      setupSocketListeners();
     });
 
     socket.on('disconnect', () => {
       console.log('Disconnected from server');
       setIsConnected(false);
+      setOnlineUsers(new Map());
     });
 
-    socket.on('new_channel', (channel) => {
-      if (channel.type === 'text') {
-        setTextChannels(prev => [...prev, channel]);
-      } else if (channel.type === 'voice') {
-        setVoiceChannels(prev => [...prev, channel]);
-      }
-    });
+    // If socket is already connected, set up listeners immediately
+    if (socket.connected) {
+      setupSocketListeners();
+    }
 
     return () => {
       socket.off('connect');
       socket.off('disconnect');
+      socket.off('online_users');
+      socket.off('user_status');
       socket.off('new_channel');
     };
   }, [user]);
@@ -139,7 +209,8 @@ export default function App() {
         </div>
 
         <div className="flex h-[calc(100vh-140px)]">
-          <div className="w-1/6 h-[calc(100vh-140px)]">
+          {/* Left sidebar - Channels */}
+          <div className="w-64 flex-shrink-0 h-[calc(100vh-140px)]">
             {/* Text Channels */}
             <div className="mb-6">
               <h2 className="text-xl font-semibold mb-2">Text Channels</h2>
@@ -168,9 +239,28 @@ export default function App() {
                     className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
                       selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
                     }`}
-                    onClick={() => setSelectedChannel({ ...ch, type: 'voice' })}
                   >
-                    🔊 {ch.name}
+                    <div onClick={() => setSelectedChannel({ ...ch, type: 'voice' })}>
+                      🔊 {ch.name}
+                    </div>
+                    {selectedChannel?.id === ch.id && selectedChannel?.type === 'voice' && (
+                      <div className="mt-2 pl-4 text-sm text-gray-400">
+                        {/* Show current user if connected */}
+                        {isVoiceConnected && (
+                          <div className="flex items-center gap-2 py-1">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            {user.username} (You){isMuted && ' [Muted]'}
+                          </div>
+                        )}
+                        {/* Show other participants */}
+                        {Array.from(peers.values()).map((peer, index) => (
+                          <div key={peer.userId} className="flex items-center gap-2 py-1">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            {peer.username}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -211,7 +301,8 @@ export default function App() {
             )}
           </div>
 
-          <div className="w-5/6 h-[calc(100vh-140px)] ml-4">
+          {/* Main content - Chat */}
+          <div className={`flex-1 h-[calc(100vh-140px)] ml-4 transition-all duration-300 ${isUserListCollapsed ? 'mr-0' : 'mr-64'}`}>
             {selectedChannel && (
               <ChatRoom 
                 channelId={selectedChannel.id} 
@@ -222,10 +313,82 @@ export default function App() {
               />
             )}
           </div>
+
+          {/* Right sidebar - Users List */}
+          <div className={`fixed right-0 top-28 w-64 h-screen bg-gray-800 transform transition-transform duration-300 ease-in-out ${
+            isUserListCollapsed ? 'translate-x-full' : 'translate-x-0'
+          } pt-4 px-4`}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Users</h2>
+            </div>
+            <div className="space-y-4 overflow-y-auto max-h-[calc(100vh-160px)]">
+              {/* Online Users */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">Online — {onlineUsers.size}</h3>
+                <div className="space-y-2">
+                  {Array.from(onlineUsers.values()).map(u => (
+                    <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700">
+                      {u.avatar_url ? (
+                        <img 
+                          src={u.avatar_url} 
+                          alt={u.username} 
+                          className="w-8 h-8 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                          {u.username.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-sm font-medium">{u.username}</div>
+                        <div className="text-xs text-green-400">Online</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Offline Users */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-400 mb-2">Offline — {offlineUsers.size}</h3>
+                <div className="space-y-2">
+                  {Array.from(offlineUsers.values()).map(u => (
+                    <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700/50">
+                      {u.avatar_url ? (
+                        <img 
+                          src={u.avatar_url} 
+                          alt={u.username} 
+                          className="w-8 h-8 rounded-full opacity-75"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-gray-600/75 flex items-center justify-center">
+                          {u.username.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-sm font-medium text-gray-300">{u.username}</div>
+                        <div className="text-xs text-gray-400">Offline</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Toggle button */}
+          <button 
+            onClick={() => setIsUserListCollapsed(!isUserListCollapsed)}
+            className="fixed right-4 top-14 p-2 bg-gray-700 hover:bg-gray-600 rounded"
+            title={isUserListCollapsed ? "Show Users" : "Hide Users"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+            </svg>
+          </button>
         </div>
       </div>
       
-      {/* Add Version Display */}
       <VersionDisplay />
     </div>
   );
