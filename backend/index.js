@@ -233,6 +233,23 @@ io.use((socket, next) => {
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.user.username);
+  
+  // Track user connection
+  socket.broadcast.emit('user_status', { 
+    userId: socket.user.id, 
+    username: socket.user.username,
+    avatar_url: socket.user.avatar_url,
+    status: 'online' 
+  });
+
+  // Send current online users to the newly connected user
+  const onlineUsers = Array.from(io.sockets.sockets.values()).map(s => ({
+    userId: s.user.id,
+    username: s.user.username,
+    avatar_url: s.user.avatar_url,
+    status: 'online'
+  }));
+  socket.emit('online_users', { users: onlineUsers });
 
   socket.on('join_channel', (channelId) => {
     socket.join(`channel-${channelId}`);
@@ -342,7 +359,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('User disconnected:', socket.user.username);
+    io.emit('user_status', { 
+      userId: socket.user.id, 
+      username: socket.user.username,
+      status: 'offline' 
+    });
   });
 
   // Handle errors
