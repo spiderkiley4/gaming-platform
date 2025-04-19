@@ -20,30 +20,38 @@ if (process.platform === 'win32') {
     app.setAppUserModelId(app.getName());
     app.setAsDefaultProtocolClient(app.getName());
 } else if (process.platform === 'linux') {
-    // Ensure desktop file is updated after auto-update
-    autoUpdater.on('update-downloaded', (info) => {
-        try {
-            const appPath = app.getPath('exe');
-            const desktopEntry = `[Desktop Entry]
+    // Create or update the desktop file on startup
+    const appPath = app.getPath('exe');
+    const resourcePath = isDev ? 
+        path.join(__dirname, '../assets/jemcord.png') : 
+        path.join(process.resourcesPath, 'assets/jemcord.png');
+
+    const desktopEntry = `[Desktop Entry]
 Name=${app.getName()}
 Exec="${appPath}" %U
 Terminal=false
 Type=Application
-Icon=${path.join(path.dirname(appPath), 'resources', 'assets', 'jemcord.png')}
+Icon=${resourcePath}
 StartupWMClass=${app.getName()}
 Comment=Gaming Platform
-Categories=Game;`;
+Categories=Game;Network;Chat;
+MimeType=x-scheme-handler/${app.getName()};
+X-GNOME-UsesNotifications=true`;
 
-            // Write to user's local applications directory
-            const userDesktopFilePath = path.join(app.getPath('home'), '.local', 'share', 'applications', `${app.getName()}.desktop`);
-            fs.mkdirSync(path.dirname(userDesktopFilePath), { recursive: true });
-            fs.writeFileSync(userDesktopFilePath, desktopEntry);
-            // Make it executable
-            fs.chmodSync(userDesktopFilePath, '755');
-        } catch (error) {
-            console.error('Error updating desktop file:', error);
-        }
-    });
+    try {
+        // Write to user's local applications directory
+        const userDesktopFilePath = path.join(app.getPath('home'), '.local', 'share', 'applications', `${app.getName().toLowerCase()}.desktop`);
+        fs.mkdirSync(path.dirname(userDesktopFilePath), { recursive: true });
+        fs.writeFileSync(userDesktopFilePath, desktopEntry);
+        // Make it executable
+        fs.chmodSync(userDesktopFilePath, '755');
+
+        // Update desktop database
+        const { spawn } = require('child_process');
+        spawn('update-desktop-database', [path.dirname(userDesktopFilePath)]);
+    } catch (error) {
+        console.error('Error creating desktop file:', error);
+    }
 }
 
 // Set update server URL if needed

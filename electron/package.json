@@ -21,12 +21,32 @@
     },
     "files": [
       "dist/**/*",
-      "../frontend/dist/**/*"
+      "../frontend/dist/**/*",
+      "assets/**/*"
     ],
-    "icon": "src/assets/jemcord.png",
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": ["**/*"]
+      }
+    ],
+    "icon": "assets/jemcord.png",
     "win": {
       "target": "nsis",
       "artifactName": "jemcord-Setup-${version}.${ext}"
+    },
+    "linux": {
+      "target": ["AppImage", "snap", "deb"],
+      "category": "Game",
+      "executableName": "jemcord",
+      "desktop": {
+        "Name": "Jemcord",
+        "Comment": "Gaming Platform",
+        "Categories": "Game;Network;Chat;",
+        "MimeType": "x-scheme-handler/jemcord;",
+        "X-GNOME-UsesNotifications": "true"
+      }
     },
     "publish": [
       {
