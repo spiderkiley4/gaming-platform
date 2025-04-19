@@ -22,6 +22,9 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Trust first proxy for secure connection detection
+app.set('trust proxy', 1);
+
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -219,8 +222,9 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
       return res.status(400).json({ error: 'Only image files are allowed' });
     }
 
-    // Get the URL for the uploaded file
-    const avatarUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    // Get the URL for the uploaded file - ensure proper protocol
+    const protocol = req.secure ? 'https' : 'http';
+    const avatarUrl = `${protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
     // Update user's avatar_url in database
     const result = await db.query(
@@ -509,10 +513,6 @@ app.get('/channels/:id/messages', async (req, res) => {
 // File upload endpoint
 app.post('/api/upload-file', authenticateToken, upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
     const { channelId } = req.body;
     if (!channelId) {
       // Delete the uploaded file if channelId is missing
@@ -520,8 +520,9 @@ app.post('/api/upload-file', authenticateToken, upload.single('file'), async (re
       return res.status(400).json({ error: 'Channel ID is required' });
     }
 
-    // Get the URL for the uploaded file
-    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    // Get the URL for the uploaded file - ensure proper protocol
+    const protocol = req.secure ? 'https' : 'http';
+    const fileUrl = `${protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
     // Insert the message with appropriate type
     const messageResult = await db.query(
