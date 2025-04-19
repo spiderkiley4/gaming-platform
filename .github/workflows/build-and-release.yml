@@ -56,9 +56,7 @@ jobs:
       - name: 🚀 Build Android app
         run: |
           cd mobile
-          eas build --platform android --profile preview --non-interactive --no-wait
-          # Wait for build to complete and download
-          eas build:wait
+          eas build --platform android --profile preview --non-interactive --wait
 
       - name: 📲 Download APK
         run: |
