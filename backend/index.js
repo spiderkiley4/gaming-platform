@@ -17,10 +17,21 @@ const app = express();
 
 // Configure CORS for both Express and Socket.IO
 const corsOptions = {
-  origin: ['http://47.6.25.173:3001', 'http://localhost:3001'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  origin: [
+    'http://47.6.25.173:3001',     // Production web
+    'http://localhost:3001',        // Development web
+    'http://localhost:19000',       // Expo development
+    'http://localhost:19006',       // Expo web
+    'http://localhost:8081',
+    'capacitor://localhost',        // Mobile app
+    'http://localhost',             // Local electron
+    'app://.',                      // Electron app
+    'file://'                       // Electron local files
+  ],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Length', 'Content-Type']
 };
 
 app.use(cors(corsOptions));
