@@ -205,6 +205,57 @@ app.patch('/users/me', authenticateToken, async (req, res) => {
   }
 });
 
+// Upload avatar endpoint
+app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Validate file type
+    if (!req.file.mimetype.startsWith('image/')) {
+      // Delete the invalid file
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Only image files are allowed' });
+    }
+
+    // Get the URL for the uploaded file
+    const avatarUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+
+    // Update user's avatar_url in database
+    const result = await db.query(
+      'UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING id, username, email, avatar_url, created_at',
+      [avatarUrl, req.user.id]
+    );
+
+    // Delete old avatar file if it exists
+    const oldAvatarUrl = result.rows[0].avatar_url;
+    if (oldAvatarUrl) {
+      const oldFilename = oldAvatarUrl.split('/').pop();
+      const oldFilePath = path.join(uploadsDir, oldFilename);
+      if (fs.existsSync(oldFilePath)) {
+        fs.unlinkSync(oldFilePath);
+      }
+    }
+
+    res.json({ avatar_url: avatarUrl });
+
+    // Notify other users about the avatar update
+    io.emit('user_status', {
+      userId: req.user.id,
+      username: result.rows[0].username,
+      avatar_url: avatarUrl,
+      status: 'online'
+    });
+  } catch (error) {
+    console.error('Error uploading avatar:', error);
+    if (req.file) {
+      fs.unlinkSync(req.file.path);
+    }
+    res.status(500).json({ error: 'Failed to update avatar' });
+  }
+});
+
 // Socket.io setup with authentication
 const server = http.createServer(app);
 const io = new Server(server, {

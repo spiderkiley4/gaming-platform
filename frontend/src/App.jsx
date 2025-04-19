@@ -151,18 +151,61 @@ export default function App() {
     <div className="p-4 text-white bg-gray-900 min-h-screen relative overflow-hidden">
       {/* User Profile & Status */}
       <div className="absolute top-4 right-4 flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          {user.avatar_url ? (
-            <img 
-              src={user.avatar_url} 
-              alt={user.username} 
-              className="w-8 h-8 rounded-full"
+        <div className="flex items-center gap-2 relative group">
+          <label className="cursor-pointer">
+            {user.avatar_url ? (
+              <img 
+                src={user.avatar_url} 
+                alt={user.username} 
+                className="w-8 h-8 rounded-full group-hover:opacity-80 transition-opacity"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center group-hover:bg-gray-500 transition-colors">
+                {user.username.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <input
+              type="file"
+              className="hidden"
+              accept="image/*"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                
+                if (file.size > 5 * 1024 * 1024) {
+                  alert('Image must be less than 5MB');
+                  return;
+                }
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                  const response = await fetch(`${API_URL}/api/upload-avatar`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: formData
+                  });
+
+                  if (!response.ok) throw new Error('Failed to upload avatar');
+
+                  const data = await response.json();
+                  setUser(prev => ({ ...prev, avatar_url: data.avatar_url }));
+                } catch (error) {
+                  console.error('Error uploading avatar:', error);
+                  alert('Failed to upload avatar. Please try again.');
+                }
+              }}
             />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-              {user.username.charAt(0).toUpperCase()}
+            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
             </div>
-          )}
+          </label>
           <span className="text-gray-300">{user.username}</span>
         </div>
         <div className={`px-2 py-1 rounded text-sm ${
