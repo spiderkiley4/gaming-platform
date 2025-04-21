@@ -327,12 +327,13 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.user.username, socket.id);
   
-  // Add user to tracking
+  // Add user to tracking with initial presence
   userStatus.set(socket.user.id, {
     userId: socket.user.id,
     username: socket.user.username,
     avatar_url: socket.user.avatar_url,
-    status: 'online'
+    status: 'online',
+    presence: null
   });
   
   // Track user connection
@@ -340,7 +341,26 @@ io.on('connection', (socket) => {
     userId: socket.user.id,
     username: socket.user.username,
     avatar_url: socket.user.avatar_url,
-    status: 'online' 
+    status: 'online',
+    presence: null
+  });
+
+  // Handle presence updates
+  socket.on('update_presence', ({ presence }) => {
+    const currentStatus = userStatus.get(socket.user.id);
+    if (currentStatus) {
+      currentStatus.presence = presence;
+      userStatus.set(socket.user.id, currentStatus);
+      
+      // Broadcast presence update to all users
+      io.emit('user_status', {
+        userId: socket.user.id,
+        username: socket.user.username,
+        avatar_url: socket.user.avatar_url,
+        status: currentStatus.status,
+        presence
+      });
+    }
   });
 
   // Handle request for current users
