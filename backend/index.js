@@ -22,11 +22,15 @@ const corsOptions = {
     'http://localhost:3001',        // Development web
     'http://localhost:19000',       // Expo development
     'http://localhost:19006',       // Expo web
-    'http://localhost:8081',
+    'http://localhost:8081',        // React Native packager
+    'http://10.0.2.2:3001',        // Android emulator
+    'http://10.0.2.2:19000',       // Android Expo
     'capacitor://localhost',        // Mobile app
     'http://localhost',             // Local electron
     'app://.',                      // Electron app
-    'file://'                       // Electron local files
+    'file://',                     // Electron local files
+    'exp://',                      // Expo Go app
+    'localhost'                     // Generic localhost
   ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
