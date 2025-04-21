@@ -22,31 +22,43 @@ if (process.platform === 'win32') {
 } else if (process.platform === 'linux') {
     // Create or update the desktop file on startup
     const appPath = app.getPath('exe');
-    const resourcePath = isDev ? 
-        path.join(__dirname, '../assets/jemcord.png') : 
+    const appDir = path.dirname(appPath);
+    const staticAppImage = path.join(appDir, 'Jemcord.AppImage'); // Adjust the name if needed
+
+    const resourcePath = isDev ?
+        path.join(__dirname, '../assets/jemcord.png') :
         path.join(process.resourcesPath, 'assets/jemcord.png');
 
+    // Create a static symlink to the current AppImage
+    try {
+        if (!fs.existsSync(staticAppImage) || fs.readlinkSync(staticAppImage) !== appPath) {
+            try {
+                fs.unlinkSync(staticAppImage); // Remove old symlink if it exists
+            } catch {}
+            fs.symlinkSync(appPath, staticAppImage);
+        }
+    } catch (error) {
+        console.error('Error creating symlink:', error);
+    }
+
     const desktopEntry = `[Desktop Entry]
-Name=${app.getName()}
-Exec="${appPath}" %U
-Terminal=false
-Type=Application
-Icon=${resourcePath}
-StartupWMClass=${app.getName()}
-Comment=Gaming Platform
-Categories=Game;Network;Chat;
-MimeType=x-scheme-handler/${app.getName()};
-X-GNOME-UsesNotifications=true`;
+    Name=${app.getName()}
+    Exec="${staticAppImage}" %U
+    Terminal=false
+    Type=Application
+    Icon=${resourcePath}
+    StartupWMClass=${app.getName()}
+    Comment=Gaming Platform
+    Categories=Game;Network;Chat;
+    MimeType=x-scheme-handler/${app.getName()};
+    X-GNOME-UsesNotifications=true`;
 
     try {
-        // Write to user's local applications directory
         const userDesktopFilePath = path.join(app.getPath('home'), '.local', 'share', 'applications', `${app.getName().toLowerCase()}.desktop`);
         fs.mkdirSync(path.dirname(userDesktopFilePath), { recursive: true });
         fs.writeFileSync(userDesktopFilePath, desktopEntry);
-        // Make it executable
         fs.chmodSync(userDesktopFilePath, '755');
 
-        // Update desktop database
         const { spawn } = require('child_process');
         spawn('update-desktop-database', [path.dirname(userDesktopFilePath)]);
     } catch (error) {
