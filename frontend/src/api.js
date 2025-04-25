@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_URL = 'http://47.6.25.173:3001';
+export const API_URL = 'https://47.6.25.173:3001';
 
 // Create axios instance with auth header interceptor
 const api = axios.create({

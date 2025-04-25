@@ -3,8 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 // Use consistent API URL across all platforms
-export const API_URL = 'http://47.6.25.173:3001';
-
+export const API_URL = 'https://47.6.25.173:3001';
 // Create axios instance with auth header interceptor
 const api = axios.create({
   baseURL: API_URL,

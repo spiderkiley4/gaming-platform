@@ -6,6 +6,7 @@ import * as fs from 'fs';
 
 const isDev = process.env.NODE_ENV === 'development';
 const appVersion = app.getVersion();
+const API_URL = isDev ? 'https://47.6.25.173:3001' : 'https://47.6.25.173:3001';
 
 console.log('Electron main process started!');
 

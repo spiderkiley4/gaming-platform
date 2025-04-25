@@ -31,7 +31,7 @@
         "filter": ["**/*"]
       }
     ],
-    "icon": "assets/jemcord.png",
+    "icon": "src/assets/jemcord.png",
     "win": {
       "target": "nsis",
       "artifactName": "jemcord-Setup-${version}.${ext}"

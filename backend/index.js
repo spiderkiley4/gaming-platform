@@ -1,5 +1,5 @@
 import express from 'express';
-import http from 'http';
+import https from 'https';
 import cors from 'cors';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
@@ -18,6 +18,8 @@ const app = express();
 // Configure CORS for both Express and Socket.IO
 const corsOptions = {
   origin: [
+    'https://your-production-domain.com',
+    'https://localhost:3001',
     'http://47.6.25.173:3001',     // Production web
     'http://localhost:3001',        // Development web
     'http://localhost:19000',       // Expo development
@@ -292,8 +294,8 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
   }
 });
 
-// Socket.io setup with authentication
-const server = http.createServer(app);
+// Socket.io setup with HTTPS server
+const server = https.createServer(sslOptions, app);
 const io = new Server(server, {
   cors: corsOptions,
   allowEIO3: true,
@@ -301,7 +303,7 @@ const io = new Server(server, {
   pingTimeout: 60000,
   pingInterval: 25000,
   connectTimeout: 20000,
-  maxHttpBufferSize: 1e8
+  maxHttpBufferSize: 1e8,
 });
 
 // Track all users and their status

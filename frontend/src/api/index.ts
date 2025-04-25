@@ -1,9 +1,7 @@
 import axios from 'axios';
 
 // Determine the API URL based on the environment
-const API_URL = import.meta.env.PROD 
-  ? import.meta.env.VITE_API_URL_PRODUCTION
-  : import.meta.env.VITE_API_URL_DEVELOPMENT;
+const API_URL = 'https://47.6.25.173:3001';
 
 const api = axios.create({
   baseURL: API_URL,
