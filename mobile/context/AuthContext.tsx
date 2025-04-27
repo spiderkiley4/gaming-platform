@@ -13,6 +13,10 @@ interface User {
   email: string;
   avatar_url?: string;
   created_at: string;
+  presence?: {
+    type: 'playing' | 'listening';
+    name: string;
+  } | null;
 }
 
 interface AuthContextType {
@@ -25,6 +29,7 @@ interface AuthContextType {
   socket: Socket | null;
   onlineUsers: Map<string, any>;
   offlineUsers: Map<string, any>;
+  updatePresence: (presence: { type: string; name: string; } | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -32,23 +37,32 @@ const AuthContext = createContext<AuthContextType | null>(null);
 let socket: Socket | null = null;
 
 const initSocket = (token: string) => {
-  console.log('[Socket] Initializing socket connection...');
+  console.log('[Auth] Initializing socket connection...');
   if (!token) {
-    console.log('[Socket] No token provided, cannot initialize socket');
+    console.warn('[Auth] No token provided, cannot initialize socket');
     return null;
   }
 
   if (socket?.connected) {
-    console.log('[Socket] Reusing existing connected socket:', socket.id);
+    console.log('[Auth] Reusing existing connected socket:', {
+      id: socket.id,
+      transport: socket.io?.engine?.transport?.name,
+      readyState: socket.io?.engine?.readyState
+    });
     return socket;
   }
 
   if (socket) {
-    console.log('[Socket] Disconnecting existing socket before reinitializing');
+    console.log('[Auth] Disconnecting existing socket before reinitializing');
     socket.disconnect();
   }
 
-  console.log('[Socket] Creating new socket instance');
+  console.log('[Auth] Creating new socket instance with config:', {
+    url: API_URL,
+    transports: ['websocket', 'polling'],
+    hasToken: !!token
+  });
+
   socket = io(API_URL, {
     transports: ['websocket', 'polling'],
     upgrade: true,
@@ -63,11 +77,12 @@ const initSocket = (token: string) => {
     autoConnect: true
   });
 
-  // Connection event handlers
   socket.on('connect', () => {
-    console.log('[Socket] Connected successfully with ID:', socket?.id);
-    console.log('[Socket] Transport:', socket?.io?.engine?.transport?.name);
-    console.log('[Socket] Upgrade:', socket?.io?.engine?.transport?.upgrade);
+    console.log('[Auth] Socket connected successfully:', {
+      id: socket?.id,
+      transport: socket?.io?.engine?.transport?.name,
+      readyState: socket?.io?.engine?.readyState
+    });
     socket?.emit('get_online_users');
   });
 
@@ -82,16 +97,16 @@ const initSocket = (token: string) => {
     }
   });
 
-  socket.on('connect_error', async (error) => {
-    console.error('[Socket] Connection error:', error.message);
-    console.log('[Socket] Error details:', {
-      type: error.type,
+  socket.on('connect_error', async (error: Error & { description?: string }) => {
+    console.error('[Auth] Socket connection error:', {
+      message: error.message,
       description: error.description,
-      context: error.context
+      transport: socket?.io?.engine?.transport?.name,
+      readyState: socket?.io?.engine?.readyState
     });
 
     if (error.message === 'Authentication required' || error.message === 'Invalid token') {
-      console.log('[Socket] Authentication error, clearing token');
+      console.log('[Auth] Authentication error, clearing token');
       await AsyncStorage.removeItem('token');
     } else {
       console.log('[Socket] Attempting reconnect after error...');
@@ -109,27 +124,31 @@ const initSocket = (token: string) => {
     console.log('[Socket] New socket ID:', socket?.id);
   });
 
-  socket.io.on('reconnect_attempt', (attemptNumber) => {
-    console.log('[Socket] Reconnection attempt:', attemptNumber);
-    console.log('[Socket] Using transport:', socket?.io?.engine?.transport?.name);
+  socket.io.on('reconnect_attempt', (attempt) => {
+    console.log('[Auth] Socket reconnection attempt:', {
+      attempt,
+      transport: socket?.io?.engine?.transport?.name,
+      readyState: socket?.io?.engine?.readyState
+    });
   });
 
   socket.io.on('reconnect_error', (error) => {
-    console.error('[Socket] Reconnection error:', error);
-    console.log('[Socket] Current state:', socket?.io?.engine?.readyState);
+    console.error('[Auth] Socket reconnection error:', {
+      error,
+      transport: socket?.io?.engine?.transport?.name,
+      readyState: socket?.io?.engine?.readyState
+    });
   });
 
   socket.io.on('reconnect_failed', () => {
-    console.error('[Socket] Reconnection failed after all attempts');
-    console.log('[Socket] Final state:', socket?.io?.engine?.readyState);
+    console.error('[Auth] Socket reconnection failed after all attempts:', {
+      transport: socket?.io?.engine?.transport?.name,
+      readyState: socket?.io?.engine?.readyState
+    });
   });
 
   socket.io.on('ping', () => {
     console.log('[Socket] Ping sent at:', new Date().toISOString());
-  });
-
-  socket.io.on('pong', (latency) => {
-    console.log('[Socket] Pong received. Latency:', latency, 'ms');
   });
 
   console.log('[Socket] Connecting socket...');
@@ -139,6 +158,7 @@ const initSocket = (token: string) => {
 
 const disconnectSocket = () => {
   if (socket) {
+    console.log('[Auth] Disconnecting socket...');
     socket.disconnect();
     socket = null;
   }
@@ -149,67 +169,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
   const [onlineUsers, setOnlineUsers] = useState<Map<string, any>>(new Map());
   const [offlineUsers, setOfflineUsers] = useState<Map<string, any>>(new Map());
+  const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
 
+  // Initialize socket when token is available
+  const initializeSocket = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (token) {
+        console.log('[Auth] Attempting to initialize socket with token');
+        const newSocket = initSocket(token);
+        if (newSocket) {
+          console.log('[Auth] Socket initialized successfully');
+          setSocketInstance(newSocket);
+          return newSocket;
+        } else {
+          console.log('[Auth] Failed to initialize socket');
+        }
+      } else {
+        console.log('[Auth] No token available for socket initialization');
+      }
+      return null;
+    } catch (error) {
+      console.error('[Auth] Error initializing socket:', error);
+      return null;
+    }
+  };
+
+  // Add a function to handle socket disconnection with state
+  const handleDisconnectSocket = () => {
+    disconnectSocket();
+    setSocketInstance(null);
+  };
+
+  // Handle initial app load
   useEffect(() => {
     const loadUser = async () => {
       try {
+        console.log('[Auth] Loading user and initializing socket...');
         const token = await AsyncStorage.getItem('token');
         if (token) {
           const res = await getCurrentUser();
-          setUser(res.data);
-          const newSocket = initSocket(token);
-          if (!newSocket) {
-            throw new Error('Failed to initialize socket');
-          }
-
-          // Set up socket listeners for user status
-          newSocket.emit('get_online_users');
+          const newSocket = await initializeSocket();
           
-          newSocket.on('online_users', ({ users }) => {
-            const onlineMap = new Map();
-            const offlineMap = new Map();
-            
-            users.forEach((u: any) => {
-              if (u.status === 'online') {
-                onlineMap.set(u.userId, u);
-              } else {
-                offlineMap.set(u.userId, u);
-              }
-            });
-            
-            setOnlineUsers(onlineMap);
-            setOfflineUsers(offlineMap);
-          });
-
-          newSocket.on('user_status', ({ userId, username, avatar_url, status }) => {
-            if (status === 'online') {
-              setOnlineUsers(prev => {
-                const newUsers = new Map(prev);
-                newUsers.set(userId, { userId, username, avatar_url, status });
-                return newUsers;
-              });
-              setOfflineUsers(prev => {
-                const newUsers = new Map(prev);
-                newUsers.delete(userId);
-                return newUsers;
-              });
-            } else {
-              setOfflineUsers(prev => {
-                const newUsers = new Map(prev);
-                newUsers.set(userId, { userId, username, avatar_url, status: 'offline' });
-                return newUsers;
-              });
-              setOnlineUsers(prev => {
-                const newUsers = new Map(prev);
-                newUsers.delete(userId);
-                return newUsers;
-              });
-            }
-          });
+          if (newSocket) {
+            setSocketInstance(newSocket);
+            setUser(res.data);
+          } else {
+            console.warn('[Auth] Could not initialize socket during user load');
+            throw new Error('Socket initialization failed');
+          }
+        } else {
+          console.log('[Auth] No token found during initial load');
         }
       } catch (error) {
-        console.error('Failed to load user:', error);
+        console.error('[Auth] Failed to load user:', error);
         await AsyncStorage.removeItem('token');
+        handleDisconnectSocket();
         setUser(null);
       } finally {
         setLoading(false);
@@ -217,10 +232,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     loadUser();
-
-    // Don't disconnect socket on unmount - let it be managed by explicit connect/disconnect calls
-    return () => {};
   }, []);
+
+  // Socket cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (socketInstance) {
+        console.log('[Auth] Cleaning up socket on unmount');
+        handleDisconnectSocket();
+      }
+    };
+  }, [socketInstance]);
 
   // Socket lifecycle management
   useEffect(() => {
@@ -263,7 +285,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Failed to initialize socket');
       }
       
-      // Set user after socket is initialized
+      // Set socket instance and user
+      setSocketInstance(newSocket);
       setUser(res.data.user);
       
     } catch (error: any) {
@@ -275,6 +298,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('[Auth] Login error:', error);
       await AsyncStorage.removeItem('token');
       disconnectSocket();
+      setSocketInstance(null);
       throw error;
     } finally {
       setLoading(false);
@@ -285,15 +309,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await register(username, email, password);
       await AsyncStorage.setItem('token', res.data.token);
-      setUser(res.data.user);
+      
       const newSocket = initSocket(res.data.token);
       if (!newSocket) {
         throw new Error('Failed to initialize socket');
       }
+      
+      // Set socket instance and user
+      setSocketInstance(newSocket);
+      setUser(res.data.user);
     } catch (err) {
       console.error('Registration failed:', err);
       await AsyncStorage.removeItem('token');
       disconnectSocket();
+      setSocketInstance(null);
       throw err;
     }
   };
@@ -302,11 +331,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await AsyncStorage.removeItem('token');
       disconnectSocket();
+      setSocketInstance(null);
       setUser(null);
     } catch (err) {
       console.error('Logout failed:', err);
     }
   };
+
+  const updatePresence = (presence: { type: string; name: string; } | null) => {
+    if (socketInstance) {
+      socketInstance.emit('update_presence', { presence });
+    }
+  };
+
+  // Update socket event handlers to handle presence
+  useEffect(() => {
+    if (!socketInstance) return;
+
+    socketInstance.on('user_status', ({ userId, username, avatar_url, status, presence }) => {
+      if (status === 'online') {
+        setOnlineUsers(prev => {
+          const newUsers = new Map(prev);
+          newUsers.set(userId, { userId, username, avatar_url, status, presence });
+          return newUsers;
+        });
+        setOfflineUsers(prev => {
+          const newUsers = new Map(prev);
+          newUsers.delete(userId);
+          return newUsers;
+        });
+      } else {
+        setOfflineUsers(prev => {
+          const newUsers = new Map(prev);
+          newUsers.set(userId, { userId, username, avatar_url, status: 'offline' });
+          return newUsers;
+        });
+        setOnlineUsers(prev => {
+          const newUsers = new Map(prev);
+          newUsers.delete(userId);
+          return newUsers;
+        });
+      }
+    });
+
+    return () => {
+      socketInstance.off('user_status');
+    };
+  }, [socketInstance]);
 
   if (loading) {
     return null; // Or a loading spinner component
@@ -322,7 +393,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loading,
       onlineUsers,
       offlineUsers,
-      socket
+      socket: socketInstance,
+      updatePresence
     }}>
       {children}
     </AuthContext.Provider>

@@ -1,6 +1,6 @@
 {
   "name": "jemcord",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Electron Application",
   "main": "dist/main.js",
   "scripts": {
@@ -28,7 +28,9 @@
       {
         "from": "assets",
         "to": "assets",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "icon": "src/assets/jemcord.png",
@@ -37,7 +39,11 @@
       "artifactName": "jemcord-Setup-${version}.${ext}"
     },
     "linux": {
-      "target": ["AppImage", "snap", "deb"],
+      "target": [
+        "AppImage",
+        "snap",
+        "deb"
+      ],
       "category": "Game",
       "executableName": "jemcord",
       "desktop": {

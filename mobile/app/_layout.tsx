@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { useFonts } from 'expo-font';
 import { Slot, Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { StatusBar } from 'expo-status-bar';
@@ -14,19 +14,21 @@ SplashScreen.preventAutoHideAsync();
 function useProtectedRoute(user: any) {
   const segments = useSegments();
   const router = useRouter();
+  const initialRender = useRef(true);
 
   useEffect(() => {
+    if (initialRender.current) {
+      initialRender.current = false;
+      return;
+    }
+
     const inAuthGroup = segments[0] === '(auth)';
 
-    const timeout = setTimeout(() => {
-      if (!user && !inAuthGroup) {
-        router.replace('/(auth)/auth');
-      } else if (user && inAuthGroup) {
-        router.replace('/');
-      }
-    }, 0); // Wait until after first render
-
-    return () => clearTimeout(timeout);
+    if (!user && !inAuthGroup) {
+      router.replace('/(auth)/auth');
+    } else if (user && inAuthGroup) {
+      router.replace('/');
+    }
   }, [user, segments]);
 }
 
@@ -69,10 +71,7 @@ function RootLayoutNav() {
             }}
           />
           <StatusBar style="auto" />
-          <Stack>
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          </Stack>
+          <Slot />
         </View>
       </KeyboardAvoidingView>
     </ThemeProvider>
@@ -80,12 +79,31 @@ function RootLayoutNav() {
 }
 
 function SocketManager() {
-  const { socket } = useAuth();
+  const { socket, user } = useAuth();
   const startTime = useRef(Date.now());
   const disconnectTimeout = useRef<NodeJS.Timeout>();
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      console.log('[SocketManager] No socket instance available, user state:', !!user);
+      setIsInitialized(false);
+      return;
+    }
+
+    if (!isInitialized) {
+      console.log('[SocketManager] Initializing socket manager');
+      setIsInitialized(true);
+    }
+
+    console.log('[SocketManager] Initial socket state:', {
+      id: socket.id,
+      connected: socket.connected,
+      disconnected: socket.disconnected,
+      transport: socket.io?.engine?.transport?.name,
+      readyState: socket.io?.engine?.readyState,
+      uptime: (Date.now() - startTime.current) / 1000
+    });
 
     const logSocketStatus = (event: string, details?: any) => {
       console.log(`[SocketManager] ${event}:`, {
@@ -93,6 +111,7 @@ function SocketManager() {
         uptime: (Date.now() - startTime.current) / 1000,
         socketId: socket.id,
         connected: socket.connected,
+        disconnected: socket.disconnected,
         readyState: socket.io?.engine?.readyState,
         transport: socket.io?.engine?.transport?.name,
         ...details
@@ -157,6 +176,12 @@ function SocketManager() {
       logSocketStatus('Socket disconnected', { reason });
     });
 
+    socket.on('connect_error', (error) => {
+      logSocketStatus('Connection error', { 
+        error: error.message
+      });
+    });
+
     socket.io.on('reconnect_attempt', (attempt) => {
       logSocketStatus('Socket reconnection attempt', { attempt });
     });
@@ -168,8 +193,11 @@ function SocketManager() {
       }
       unsubscribe();
       subscription.remove();
+      if (isInitialized) {
+        logSocketStatus('Cleaning up socket manager');
+      }
     };
-  }, [socket]);
+  }, [socket, user, isInitialized]);
 
   return null;
 }

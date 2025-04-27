@@ -7,6 +7,7 @@ import AuthForms from './components/AuthForms';
 import { useAuth } from './context/AuthContext';
 import VersionDisplay from './components/VersionDisplay';
 import { useVoiceChat } from './hooks/useVoiceChat';
+import { useSpotifyPresence } from './hooks/useSpotifyPresence';
 
 export default function App() {
   const { user, logout, setUser } = useAuth();
@@ -25,9 +26,67 @@ export default function App() {
   const [mentions, setMentions] = useState(new Map()); // Map of channel ID to mention count
   const [isWindowFocused, setIsWindowFocused] = useState(true);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [userPresence, setUserPresence] = useState(null);
+  const [showProfileSettings, setShowProfileSettings] = useState(false);
+  const [customStatus, setCustomStatus] = useState('');
   
   const socket = getSocket();
   const { peers, isMuted, isConnected: isVoiceConnected } = useVoiceChat(selectedChannel?.id || 0, socket);
+
+  // Add presence update function
+  const updatePresence = (presence) => {
+    const socket = getSocket();
+    if (socket) {
+      socket.emit('update_presence', { presence });
+    }
+  };
+
+  // Initialize Spotify presence
+  // useSpotifyPresence((presence) => {
+  //   setUserPresence(presence);
+  //   updatePresence(presence);
+  // });
+
+  // Add presence update interval effect
+  useEffect(() => {
+    const checkPresence = async () => {
+      if (window.electron) {
+        const games = await window.electron.invoke('get-running-games');
+        if (games.length > 0) {
+          const newPresence = { type: 'playing', name: games[0] };
+          if (!userPresence || userPresence.type !== 'playing' || userPresence.name !== games[0]) {
+            setUserPresence(newPresence);
+            updatePresence(newPresence);
+          }
+        } else if (userPresence?.type === 'playing') {
+          setUserPresence(null);
+          updatePresence(null);
+        }
+      }
+    };
+
+    const presenceInterval = setInterval(checkPresence, 30000);
+    checkPresence(); // Initial check
+
+    return () => clearInterval(presenceInterval);
+  }, [userPresence]);
+
+  // Function to detect game processes
+  const detectGameProcess = () => {
+    if (window.electron) {
+      window.electron.invoke('get-running-games').then(games => {
+        if (games.length > 0) {
+          updatePresence({ type: 'playing', name: games[0] });
+        }
+      });
+    }
+  };
+
+  // Detect games periodically
+  useEffect(() => {
+    const checkInterval = setInterval(detectGameProcess, 30000); // Check every 30 seconds
+    return () => clearInterval(checkInterval);
+  }, []);
 
   // Fetch channels on initial load
   useEffect(() => {
@@ -244,12 +303,161 @@ export default function App() {
     return <AuthForms />;
   }
 
+  // Profile settings modal component
+  const ProfileSettingsModal = () => {
+    if (!showProfileSettings) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-gray-800 p-6 rounded-lg w-96">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Profile Settings</h2>
+            <button 
+              onClick={() => setShowProfileSettings(false)}
+              className="text-gray-400 hover:text-gray-200 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="space-y-4">
+            {/* Avatar Section */}
+            <div className="flex items-center gap-4">
+              <div className="relative group">
+                <label className="cursor-pointer block">
+                  {user.avatar_url ? (
+                    <img 
+                      src={user.avatar_url} 
+                      alt={user.username} 
+                      className="w-20 h-20 rounded-full group-hover:opacity-80 transition-opacity"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-full bg-gray-600 flex items-center justify-center group-hover:bg-gray-500 transition-colors">
+                      {user.username.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      
+                      if (file.size > 5 * 1024 * 1024) {
+                        alert('Image must be less than 5MB');
+                        return;
+                      }
+
+                      const formData = new FormData();
+                      formData.append('file', file);
+
+                      try {
+                        const response = await fetch(`${API_URL}/api/upload-avatar`, {
+                          method: 'POST',
+                          headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`
+                          },
+                          body: formData
+                        });
+
+                        if (!response.ok) throw new Error('Failed to upload avatar');
+
+                        const data = await response.json();
+                        setUser(prev => ({ ...prev, avatar_url: data.avatar_url }));
+                      } catch (error) {
+                        console.error('Error uploading avatar:', error);
+                        alert('Failed to upload avatar. Please try again.');
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+              <div>
+                <h3 className="font-medium text-lg">{user.username}</h3>
+                <p className="text-gray-400 text-sm">Click the image to change your avatar</p>
+              </div>
+            </div>
+
+            {/* Status Section */}
+            <div>
+              <label className="block text-gray-300 mb-2">Custom Status</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={customStatus}
+                  onChange={(e) => setCustomStatus(e.target.value)}
+                  placeholder="Set your status..."
+                  className="flex-1 bg-gray-700 rounded px-3 py-2 text-white"
+                  maxLength={50}
+                />
+                <button
+                  onClick={() => {
+                    updatePresence(customStatus ? { type: 'custom', name: customStatus } : null);
+                    setShowProfileSettings(false);
+                  }}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Set
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Update status display component
+  const renderUserStatus = (user) => {
+    if (user.presence) {
+      switch (user.presence.type) {
+        case 'playing':
+          return (
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+              <span className="text-xs text-green-400">Playing {user.presence.name}</span>
+            </div>
+          );
+        case 'listening':
+          return (
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-[#1DB954]"></span>
+              <span className="text-xs text-[#1DB954]">{user.presence.name}</span>
+            </div>
+          );
+        default:
+          return (
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+              <span className="text-xs text-green-400">Online</span>
+            </div>
+          );
+      }
+    }
+    return (
+      <div className="flex items-center gap-1">
+        <span className="w-2 h-2 rounded-full bg-green-500"></span>
+        <span className="text-xs text-green-400">Online</span>
+      </div>
+    );
+  };
+
   return (
     <div className="p-4 text-white bg-gray-900 min-h-screen relative overflow-hidden">
       {/* User Profile & Status */}
       <div className="absolute top-4 right-4 flex items-center gap-4">
-        <div className="flex items-center gap-2 relative group">
-          <label className="cursor-pointer">
+        <div 
+          className="flex items-center gap-2 relative group cursor-pointer"
+          onClick={() => setShowProfileSettings(true)}
+        >
+          <div className="relative">
             {user.avatar_url ? (
               <img 
                 src={user.avatar_url} 
@@ -261,48 +469,7 @@ export default function App() {
                 {user.username.charAt(0).toUpperCase()}
               </div>
             )}
-            <input
-              type="file"
-              className="hidden"
-              accept="image/*"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                
-                if (file.size > 5 * 1024 * 1024) {
-                  alert('Image must be less than 5MB');
-                  return;
-                }
-
-                const formData = new FormData();
-                formData.append('file', file);
-
-                try {
-                  const response = await fetch(`${API_URL}/api/upload-avatar`, {
-                    method: 'POST',
-                    headers: {
-                      'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    },
-                    body: formData
-                  });
-
-                  if (!response.ok) throw new Error('Failed to upload avatar');
-
-                  const data = await response.json();
-                  setUser(prev => ({ ...prev, avatar_url: data.avatar_url }));
-                } catch (error) {
-                  console.error('Error uploading avatar:', error);
-                  alert('Failed to upload avatar. Please try again.');
-                }
-              }}
-            />
-            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </div>
-          </label>
+          </div>
           <span className="text-gray-300">{user.username}</span>
         </div>
         <div className={`px-2 py-1 rounded text-sm ${
@@ -317,6 +484,8 @@ export default function App() {
           Logout
         </button>
       </div>
+
+      <ProfileSettingsModal />
 
       <div className="flex flex-col flex-grow">
         <div>
@@ -505,8 +674,10 @@ export default function App() {
                         </div>
                       )}
                       <div>
-                        <div className="text-sm font-medium">{u.username}</div>
-                        <div className="text-xs text-green-400">Online</div>
+                        <div className="text-xs font-medium">{u.username}</div>
+                        <div className="flex items-center gap-1 text-xs">
+                          {renderUserStatus(u)}
+                        </div>
                       </div>
                     </div>
                   ))}

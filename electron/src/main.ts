@@ -1,8 +1,10 @@
-import { app, BrowserWindow, dialog, Notification } from 'electron';
+import { app, BrowserWindow, dialog, Notification, ipcMain } from 'electron';
 import * as path from 'path';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import * as fs from 'fs';
+const { exec } = require('child_process');
+import type { ExecException } from 'child_process';
 
 const isDev = process.env.NODE_ENV === 'development';
 const appVersion = app.getVersion();
@@ -78,6 +80,57 @@ if (!isDev) {
     });
 }
 
+function getRunningGames() {
+    return new Promise<string[]>((resolve) => {
+        if (process.platform === 'win32') {
+            exec('tasklist', (error: ExecException | null, stdout: string) => {
+                if (error) {
+                    console.error('Error getting process list:', error);
+                    resolve([]);
+                    return;
+                }
+
+                const gameProcesses = [
+                    { name: 'League of Legends', process: 'League of Legends.exe' },
+                    { name: 'Counter-Strike 2', process: 'cs2.exe' },
+                    { name: 'Minecraft', process: 'javaw.exe' },
+                    { name: 'Fortnite', process: 'FortniteClient-Win64-Shipping.exe' },
+                    { name: 'Valorant', process: 'VALORANT.exe' },
+                    { name: 'Steam', process: 'steam.exe' }
+                ];
+
+                const runningGames = gameProcesses
+                    .filter(game => stdout.includes(game.process))
+                    .map(game => game.name);
+
+                resolve(runningGames);
+            });
+        } else if (process.platform === 'linux') {
+            exec('ps aux', (error: ExecException | null, stdout: string) => {
+                if (error) {
+                    console.error('Error getting process list:', error);
+                    resolve([]);
+                    return;
+                }
+
+                const gameProcesses = [
+                    { name: 'Counter-Strike 2', process: 'cs2_linux64' },
+                    { name: 'Steam', process: 'steam' },
+                    { name: 'Minecraft', process: 'java' }
+                ];
+
+                const runningGames = gameProcesses
+                    .filter(game => stdout.includes(game.process))
+                    .map(game => game.name);
+
+                resolve(runningGames);
+            });
+        } else {
+            resolve([]);
+        }
+    });
+}
+
 function createWindow() {
     const mainWindow = new BrowserWindow({
         width: 1200,
@@ -137,6 +190,11 @@ function createWindow() {
 
             notification.show();
         }
+    });
+
+    // Add IPC handler for game detection
+    ipcMain.handle('get-running-games', async () => {
+        return await getRunningGames();
     });
 
     // In development, load from React dev server

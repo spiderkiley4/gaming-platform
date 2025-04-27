@@ -458,30 +458,32 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
                   </span>
                 </div>
               )}
-              <div className={`p-2 mb-2 mr-4 rounded w-full hover:bg-gray-700/60 ${
-                message.user_id === userId ? 'ml-auto' : 'mr-auto'
-              } mt-3`}>
-                <div className="flex items-center gap-2 mb-1">
-                  {message.avatar_url ? (
-                    <img 
-                      src={message.avatar_url} 
-                      alt={message.username} 
-                      className="w-6 h-6 rounded-full"
-                    />
-                  ) : (
-                    <div className="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-sm">
+              <div className={`p-2 mb-2 mr-4 rounded w-full hover:bg-gray-700/60 flex items-start gap-3`}>
+                {message.avatar_url ? (
+                  <img 
+                    src={message.avatar_url} 
+                    alt={message.username} 
+                    className="w-12 h-12 rounded-full flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
+                    <span>
                       {message.username ? message.username.charAt(0).toUpperCase() : `U${message.user_id}`}
-                    </div>
-                  )}
-                  <span className="text-sm text-gray-300">
-                    {message.username || `User #${message.user_id}`}
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    {new Date(message.created_at).toLocaleTimeString()}
-                  </span>
-                </div>
-                <div>
-                  {renderMessageContent(message)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-gray-300 font-medium">
+                      {message.username || `User #${message.user_id}`}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(message.created_at).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div>
+                    {renderMessageContent(message)}
+                  </div>
                 </div>
               </div>
             </div>
