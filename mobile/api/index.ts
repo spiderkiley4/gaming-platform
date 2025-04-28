@@ -37,17 +37,17 @@ api.interceptors.request.use(async (config) => {
 });
 
 export const login = (username: string, password: string) => {
-  return api.post('/auth/login', { username, password });
+  return api.post('/api/auth/login', { username, password });
 };
 
 export const register = (username: string, password: string) => {
-  return api.post('/auth/register', { username, password });
+  return api.post('/api/auth/register', { username, password });
 };
 
 export const getUser = () => {
-  return api.get('/auth/user');
+  return api.get('/api/users/me');
 };
 
 export const logout = () => {
-  return api.post('/auth/logout');
+  return api.post('/api/auth/logout');
 };

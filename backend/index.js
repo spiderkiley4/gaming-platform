@@ -125,7 +125,7 @@ const authenticateToken = (req, res, next) => {
 };
 
 // Auth routes
-app.post('/auth/register', async (req, res) => {
+app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password, email } = req.body;
     
@@ -163,7 +163,7 @@ app.post('/auth/register', async (req, res) => {
   }
 });
 
-app.post('/auth/login', async (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -195,7 +195,7 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // Protected user routes
-app.get('/users/me', authenticateToken, async (req, res) => {
+app.get('/api/users/me', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
       'SELECT id, username, email, avatar_url, created_at FROM users WHERE id = $1',
@@ -213,7 +213,7 @@ app.get('/users/me', authenticateToken, async (req, res) => {
   }
 });
 
-app.patch('/users/me', authenticateToken, async (req, res) => {
+app.patch('/api/users/me', authenticateToken, async (req, res) => {
   try {
     const { avatar_url } = req.body;
     
@@ -527,7 +527,7 @@ io.on('connection', (socket) => {
   });
 });
 
-app.get('/channels', async (req, res) => {
+app.get('/api/channels', async (req, res) => {
   const type = req.query.type; // Optional type filter
   let query = 'SELECT * FROM channels';
   const params = [];
@@ -541,7 +541,7 @@ app.get('/channels', async (req, res) => {
   res.json(result.rows);
 });
 
-app.post('/channels', async (req, res) => {
+app.post('/api/channels', async (req, res) => {
   const { name, type } = req.body;
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ error: 'Invalid name' });
@@ -560,7 +560,7 @@ app.post('/channels', async (req, res) => {
   res.json(channel);
 });
 
-app.get('/channels/:id/messages', async (req, res) => {
+app.get('/api/channels/:id/messages', async (req, res) => {
   const result = await db.query(
     `SELECT m.*, u.username, u.avatar_url 
      FROM messages m 

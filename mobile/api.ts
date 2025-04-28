@@ -43,28 +43,28 @@ api.interceptors.request.use(async (config) => {
 
 // Auth endpoints
 export const register = (username: string, email: string, password: string) => 
-  api.post('/auth/register', { username, email, password });
+  api.post('/api/auth/register', { username, email, password });
 
 export const login = (username: string, password: string) => 
-  api.post('/auth/login', { username, password });
+  api.post('/api/auth/login', { username, password });
 
 export const getCurrentUser = () => 
-  api.get('/users/me');
+  api.get('/api/users/me');
 
 export const updateProfile = (data: { avatar_url?: string }) => 
-  api.patch('/users/me', data);
+  api.patch('/api/users/me', data);
 
 // Channel endpoints
 export const getChannels = (type?: 'text' | 'voice') => {
   const params = type ? { type } : {};
-  return api.get('/channels', { params });
+  return api.get('/api/channels', { params });
 };
 
 export const createChannel = (name: string, type: 'text' | 'voice' = 'text') => {
-  return api.post('/channels', { name, type });
+  return api.post('/api/channels', { name, type });
 };
 
 export const getMessages = (channelId: number) => 
-  api.get(`/channels/${channelId}/messages`);
+  api.get(`/api/channels/${channelId}/messages`);
 
 export default api;
