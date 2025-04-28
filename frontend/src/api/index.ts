@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Determine the API URL based on the environment
-const API_URL = 'https://47.6.25.173:3001';
+const API_URL = 'https://jemcord.mooo.com';
 
 const api = axios.create({
   baseURL: API_URL,
