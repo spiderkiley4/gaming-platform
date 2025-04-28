@@ -23,6 +23,7 @@ const corsOptions = {
     'https://www.jemcord.mooo.com',
     'http://www.jemcord.mooo.com',
     'https://47.6.25.173:3001',     // Production web
+    'https://localhost:80',         // Production web
     'https://localhost:3001',        // Development web
     'https://localhost:19000',       // Expo development
     'https://localhost:19006',       // Expo web

@@ -12,6 +12,16 @@ const API_URL = isDev ? 'https://localhost:3001' : 'https://47.6.25.173:3001';
 
 console.log('Electron main process started!');
 
+app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+    if (url === 'https://jemcord.mooo.com' || url === 'https://localhost:3001') {
+      // Verification logic.
+      event.preventDefault()
+      callback(true)
+    } else {
+      callback(false)
+    }
+  })
+
 // Configure auto-updater
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
