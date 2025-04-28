@@ -45,7 +45,7 @@ const corsOptions = {
   preflightContinue: false
 };
 
-app.use(cors(corsOptions));
+//app.use(cors(corsOptions));
 
 // Add CORS headers to all responses
 app.use((req, res, next) => {
