@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { createServer } from 'http';
 
 dotenv.config();
 
@@ -313,7 +314,7 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
 });
 
 // Socket.io setup with HTTP server
-const server = require('http').createServer(app);
+const server = createServer(app);
 const io = new Server(server, {
   cors: {
     origin: corsOptions.origin,
