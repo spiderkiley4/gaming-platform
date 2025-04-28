@@ -18,7 +18,7 @@ const app = express();
 // Configure CORS for both Express and Socket.IO
 const corsOptions = {
   origin: [
-    'https://your-production-domain.com',
+    'https://jemcord.mooo.com',
     'https://localhost:3001',
     'https://47.6.25.173:3001',     // Production web
     'https://localhost:3001',        // Development web
