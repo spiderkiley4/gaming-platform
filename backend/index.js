@@ -19,7 +19,9 @@ const app = express();
 const corsOptions = {
   origin: [
     'https://jemcord.mooo.com',
-    'https://localhost:3001',
+    'http://jemcord.mooo.com',
+    'https://www.jemcord.mooo.com',
+    'http://www.jemcord.mooo.com',
     'https://47.6.25.173:3001',     // Production web
     'https://localhost:3001',        // Development web
     'https://localhost:19000',       // Expo development
@@ -36,11 +38,26 @@ const corsOptions = {
   ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Content-Length', 'Content-Type']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
+  exposedHeaders: ['Content-Length', 'Content-Type'],
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 };
 
 app.use(cors(corsOptions));
+
+// Add CORS headers to all responses
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (corsOptions.origin.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', true);
+    res.header('Access-Control-Allow-Methods', corsOptions.methods.join(','));
+    res.header('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(','));
+  }
+  next();
+});
+
 app.use(express.json());
 
 // Trust first proxy for secure connection detection
@@ -303,7 +320,12 @@ const sslOptions = {
 // Socket.io setup with HTTPS server
 const server = https.createServer(sslOptions, app);
 const io = new Server(server, {
-  cors: corsOptions,
+  cors: {
+    origin: corsOptions.origin,
+    methods: corsOptions.methods,
+    credentials: true,
+    allowedHeaders: corsOptions.allowedHeaders
+  },
   allowEIO3: true,
   transports: ['websocket', 'polling'],
   pingTimeout: 60000,
