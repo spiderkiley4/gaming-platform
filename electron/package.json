@@ -1,5 +1,5 @@
 {
-  "name": "jemcord",
+  "name": "jemcord-electron",
   "version": "1.0.7",
   "description": "Electron Application",
   "main": "dist/main.js",
@@ -10,7 +10,7 @@
     "build": "npm run build:electron && npm run build:frontend && npm run copy:frontend",
     "watch": "tsc -w",
     "start": "npm run build && cross-env NODE_ENV=production nodemon --watch main.js --exec electron .",
-    "dev": "concurrently \"cd ../frontend && npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development nodemon --watch main.js --exec electron .",
+    "dev": "concurrently \"cd ../frontend && cross-env ELECTRON=true npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development nodemon --watch main.js --exec electron .",
     "package": "npm run build && electron-builder --linux AppImage --win nsis --x64",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

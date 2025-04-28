@@ -1,31 +1,26 @@
 import { io } from 'socket.io-client';
 import { API_URL } from './api';
 
+// Ensure we use WSS for secure WebSocket connections
+const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsUrl = API_URL.replace(/^https?:/, wsProtocol);
+
 let socket = null;
 
-export const initSocket = () => {
-  const token = localStorage.getItem('token');
-  if (!token) return null;
+const createSocket = (token) => io(wsUrl, {
+  transports: ['websocket', 'polling'],
+  upgrade: true,
+  auth: { token },
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  randomizationFactor: 0.5,
+  timeout: 20000,
+  forceNew: true
+});
 
-  if (socket?.connected) return socket;
-
-  if (socket) {
-    socket.disconnect();
-  }
-
-  socket = io(API_URL, {
-    transports: ['websocket', 'polling'],
-    upgrade: true,
-    auth: { token },
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    randomizationFactor: 0.5,
-    timeout: 20000,
-    forceNew: true
-  });
-
+const setupSocketListeners = (socket) => {
   socket.on('connect', () => {
     console.log('Socket connected with ID:', socket.id);
   });
@@ -66,11 +61,18 @@ export const initSocket = () => {
   socket.io.on('reconnect_failed', () => {
     console.error('Failed to reconnect');
   });
-
-  return socket;
 };
 
-export const getSocket = () => socket;
+export const initSocket = () => {
+  if (!socket) {
+    const token = localStorage.getItem('token');
+    if (token) {
+      socket = createSocket(token);
+      setupSocketListeners(socket);
+    }
+  }
+  return socket;
+};
 
 export const disconnectSocket = () => {
   if (socket) {
@@ -79,4 +81,7 @@ export const disconnectSocket = () => {
   }
 };
 
-export default { initSocket, getSocket, disconnectSocket };
+export const getSocket = () => socket;
+
+// Initialize socket on module load
+export default initSocket();

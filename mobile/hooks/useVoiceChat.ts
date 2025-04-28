@@ -1,6 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Platform } from 'react-native';
-import { Socket } from 'socket.io-client';
+import { Socket, io } from 'socket.io-client';
+import { API_URL } from '../api';
+
+// Convert HTTPS URL to WSS URL for secure WebSocket connections
+const wsProtocol = API_URL.startsWith('https:') ? 'wss:' : 'ws:';
+const wsUrl = API_URL.replace(/^https?:/, wsProtocol);
 
 interface PeerData {
   stream: MediaStream;
@@ -17,7 +22,7 @@ interface VoiceChatState {
   disconnect: () => void;
 }
 
-export function useVoiceChat(channelId: number, socket: Socket | null): VoiceChatState {
+export const useVoiceChat = () => {
   const [isMuted, setIsMuted] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [peers] = useState(new Map<string, PeerData>());
@@ -69,7 +74,7 @@ export function useVoiceChat(channelId: number, socket: Socket | null): VoiceCha
     }
 
     peerConnection.onicecandidate = (event) => {
-      if (event.candidate && socket) {
+      if (event.candidate) {
         console.log('Sending ICE candidate to', remoteUserId);
         socket.emit('relay_ice_candidate', {
           candidate: event.candidate,
@@ -115,9 +120,7 @@ export function useVoiceChat(channelId: number, socket: Socket | null): VoiceCha
       setIsMuted(false);
       setIsConnected(true);
       
-      if (socket) {
-        socket.emit('voice_join', { channelId });
-      }
+      socket.emit('voice_join', { channelId });
     } catch (err) {
       console.error('Error accessing microphone:', err);
       throw new Error('Could not access microphone');
@@ -153,14 +156,10 @@ export function useVoiceChat(channelId: number, socket: Socket | null): VoiceCha
     setIsConnected(false);
     setIsMuted(true);
 
-    if (socket) {
-      socket.emit('voice_leave', { channelId });
-    }
+    socket.emit('voice_leave', { channelId });
   };
 
   useEffect(() => {
-    if (!socket) return;
-
     const handleVoiceUsers = async ({ users }: { users: string[] }) => {
       console.log('Received existing users:', users);
       if (!localStreamRef.current) return;
@@ -266,4 +265,4 @@ export function useVoiceChat(channelId: number, socket: Socket | null): VoiceCha
     toggleMute,
     disconnect,
   };
-}
+};
