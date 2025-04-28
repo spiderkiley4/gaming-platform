@@ -294,6 +294,12 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
   }
 });
 
+// Add SSL options before server creation
+const sslOptions = {
+  key: fs.readFileSync('/home/jeremy/servercert/key.pem'),
+  cert: fs.readFileSync('/home/jeremy/servercert/cert.pem'),
+};
+
 // Socket.io setup with HTTPS server
 const server = https.createServer(sslOptions, app);
 const io = new Server(server, {
