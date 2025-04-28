@@ -1,9 +1,8 @@
 import { io } from 'socket.io-client';
 import { API_URL } from './api';
 
-// Ensure we use WSS for secure WebSocket connections
-const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const wsUrl = API_URL.replace(/^https?:/, wsProtocol);
+// Use the same protocol (http/https) as the API_URL
+const wsUrl = API_URL;
 
 let socket = null;
 
