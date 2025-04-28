@@ -20,15 +20,15 @@ const corsOptions = {
   origin: [
     'https://your-production-domain.com',
     'https://localhost:3001',
-    'http://47.6.25.173:3001',     // Production web
-    'http://localhost:3001',        // Development web
-    'http://localhost:19000',       // Expo development
-    'http://localhost:19006',       // Expo web
-    'http://localhost:8081',        // React Native packager
-    'http://10.0.2.2:3001',        // Android emulator
-    'http://10.0.2.2:19000',       // Android Expo
+    'https://47.6.25.173:3001',     // Production web
+    'https://localhost:3001',        // Development web
+    'https://localhost:19000',       // Expo development
+    'https://localhost:19006',       // Expo web
+    'https://localhost:8081',        // React Native packager
+    'https://10.0.2.2:3001',        // Android emulator
+    'https://10.0.2.2:19000',       // Android Expo
     'capacitor://localhost',        // Mobile app
-    'http://localhost',             // Local electron
+    'https://localhost',             // Local electron
     'app://.',                      // Electron app
     'file://',                     // Electron local files
     'exp://',                      // Expo Go app
