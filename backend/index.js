@@ -15,6 +15,14 @@ import { createServer } from 'http';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', true);
+
+app.use((req, res, next) => {
+  if (req.headers['x-forwarded-proto'] === 'https') {
+    req.secure = true;
+  }
+  next();
+});
 
 // Configure CORS for both Express and Socket.IO
 const corsOptions = {
@@ -263,7 +271,7 @@ app.post('/upload-avatar', authenticateToken, upload.single('file'), async (req,
     }
 
     // Get the URL for the uploaded file - ensure proper protocol
-    const protocol = req.secure ? 'https' : 'http';
+    const protocol = (req.headers['x-forwarded-proto'] === 'https' || req.secure) ? 'https' : 'http';
     const avatarUrl = `${protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
     // Get current user data first
@@ -601,7 +609,7 @@ app.post('/upload-file', authenticateToken, upload.single('file'), async (req, r
     }
 
     // Get the URL for the uploaded file - ensure proper protocol
-    const protocol = req.secure ? 'https' : 'http';
+    const protocol = (req.headers['x-forwarded-proto'] === 'https' || req.secure) ? 'https' : 'http';
     const fileUrl = `${protocol}://${req.get('host')}/uploads/${req.file.filename}`;
 
     // Insert the message with appropriate type
