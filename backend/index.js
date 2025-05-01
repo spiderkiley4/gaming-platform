@@ -57,7 +57,7 @@ const corsOptions = {
 //app.use(cors(corsOptions));
 
 // Add CORS headers to all responses
-app.use((req, res, next) => {
+/*app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (corsOptions.origin.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
@@ -66,7 +66,7 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(','));
   }
   next();
-});
+});*/
 
 app.use(express.json());
 
