@@ -17,13 +17,6 @@ dotenv.config();
 const app = express();
 app.set('trust proxy', true);
 
-app.use((req, res, next) => {
-  if (req.headers['x-forwarded-proto'] === 'https') {
-    req.secure = true;
-  }
-  next();
-});
-
 // Configure CORS for both Express and Socket.IO
 const corsOptions = {
   origin: [
