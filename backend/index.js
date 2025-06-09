@@ -27,6 +27,7 @@ const corsOptions = {
     'https://47.6.25.173:3001',     // Production web
     'https://localhost:80',         // Production web
     'https://localhost:3001',        // Development web
+    'http://localhost:5173',
     'https://localhost:19000',       // Expo development
     'https://localhost:19006',       // Expo web
     'https://localhost:8081',        // React Native packager
@@ -62,9 +63,6 @@ app.use(cors(corsOptions));
 });*/
 
 app.use(express.json());
-
-// Trust first proxy for secure connection detection
-app.set('trust proxy', 1);
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -642,6 +640,10 @@ app.post('/upload-file', authenticateToken, upload.single('file'), async (req, r
     }
     res.status(500).json({ error: 'Failed to upload file' });
   }
+});
+
+app.get('/api/test', (req, res) => {
+  res.json({ message: 'server works!' });
 });
 
 server.listen(process.env.PORT, '0.0.0.0', () => {
