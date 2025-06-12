@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_URL = '/api';
+export const API_URL = import.meta.env.VITE_API_URL;
 
 // Create axios instance with auth header interceptor
 const api = axios.create({
