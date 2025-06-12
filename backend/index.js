@@ -65,7 +65,7 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 // Create uploads directory if it doesn't exist
-const uploadsDir = path.join(process.cwd(), 'uploads');
+const uploadsDir = '/var/www/uploads';
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -111,7 +111,7 @@ const upload = multer({
 });
 
 // Serve uploaded files statically
-app.use('/api/uploads', express.static(uploadsDir));
+// app.use('/api/uploads', express.static(uploadsDir));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -261,9 +261,10 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
       return res.status(400).json({ error: 'Only image files are allowed' });
     }
 
-    // Get the URL for the uploaded file - ensure proper protocol
-    const protocol = (req.headers['x-forwarded-proto'] === 'https' || req.secure) ? 'https' : 'http';
-    const avatarUrl = `${protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    // --- CRITICAL CHANGE HERE ---
+    // Store and use a relative path for the avatar URL
+    // Nginx will handle serving '/uploads/filename' from 'https://jemcord.mooo.com'
+    const avatarUrl = `/uploads/${req.file.filename}`;
 
     // Get current user data first
     const currentUser = await db.query(
@@ -274,13 +275,14 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
     // Update user's avatar_url in database
     const result = await db.query(
       'UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING id, username, email, avatar_url, created_at',
-      [avatarUrl, req.user.id]
+      [avatarUrl, req.user.id] // Save the relative path
     );
 
     // Try to delete old avatar file if it exists
     try {
       const oldAvatarUrl = currentUser.rows[0]?.avatar_url;
       if (oldAvatarUrl) {
+        // Extract filename from relative or absolute URL
         const oldFilename = oldAvatarUrl.split('/').pop();
         if (oldFilename) {
           const oldFilePath = path.join(uploadsDir, oldFilename);
@@ -296,11 +298,11 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
 
     res.json({ avatar_url: avatarUrl });
 
-    // Notify other users about the avatar update
+    // Notify other users about the avatar update with the relative URL
     io.emit('user_status', {
       userId: req.user.id,
       username: result.rows[0].username,
-      avatar_url: avatarUrl,
+      avatar_url: avatarUrl, // Emit the relative path
       status: 'online'
     });
   } catch (error) {
@@ -310,7 +312,7 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
     }
     res.status(500).json({ error: 'Failed to update avatar' });
   }
-});
+});;
 
 // Socket.io setup with HTTP server
 const server = createServer(app);
