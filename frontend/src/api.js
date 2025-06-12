@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_URL = 'https://jemcord.mooo.com';
+export const API_URL = '/api';
 
 // Create axios instance with auth header interceptor
 const api = axios.create({
