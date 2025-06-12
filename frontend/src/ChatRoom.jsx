@@ -35,16 +35,19 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
     };
     
     socket.on('online_users', handleUsers);
-    socket.on('user_status', ({ userId, username, status }) => {
+    socket.on('user_status', ({ userId, username, status, avatar_url }) => {
       setUsers(prev => {
         if (status === 'offline') {
           return prev.filter(u => u.userId !== userId);
         } else {
           const exists = prev.some(u => u.userId === userId);
           if (!exists) {
-            return [...prev, { userId, username }];
+            return [...prev, { userId, username, avatar_url }];
           }
-          return prev;
+          // Update existing user's avatar if it changed
+          return prev.map(u => 
+            u.userId === userId ? { ...u, username, avatar_url } : u
+          );
         }
       });
     });
