@@ -603,7 +603,7 @@ app.post('/api/upload-file', authenticateToken, upload.single('file'), async (re
 
     // Get the URL for the uploaded file - ensure proper protocol
     const protocol = (req.headers['x-forwarded-proto'] === 'https' || req.secure) ? 'https' : 'http';
-    const fileUrl = `${protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    const fileUrl = `/uploads/${req.file.filename}`;
 
     // Insert the message with appropriate type
     const messageResult = await db.query(
