@@ -1,6 +1,6 @@
 {
   "name": "jemcord-electron",
-  "version": "1.0.71",
+  "version": "1.0.72",
   "description": "Electron Application",
   "main": "dist/main.js",
   "scripts": {

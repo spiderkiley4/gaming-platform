@@ -33,47 +33,58 @@ if (process.platform === 'win32') {
     app.setAppUserModelId(app.getName());
     app.setAsDefaultProtocolClient(app.getName());
 } else if (process.platform === 'linux') {
-    // Get the application root directory
     const appRoot = path.join(__dirname, '..');
-    
-    // Get the correct paths based on environment
-    const appPath = isDev 
-        ? path.join(appRoot, 'node_modules', '.bin', 'electron') // Use electron binary in dev
-        : process.env.APPIMAGE || app.getPath('exe');
-    
-    // Set correct icon path - always use the app's assets folder
-    const iconPath = path.join(appRoot, 'assets', 'jemcord.png');
+    // Use AppImage path if available, else fallback to electron binary
+    const appPath = process.env.APPIMAGE || app.getPath('exe');
+    const userHome = app.getPath('home');
+    const desktopDir = path.join(userHome, '.local', 'share', 'applications');
+    const iconDestDir = path.join(userHome, '.local', 'share', 'icons');
+    const iconDest = path.join(iconDestDir, 'jemcord.png');
+    const desktopFilePath = path.join(desktopDir, 'jemcord.desktop');
 
-    // Ensure the icon exists
-    if (!fs.existsSync(iconPath)) {
-        console.error('Icon not found at:', iconPath);
+    const iconSrcCandidates = [
+    path.join(appRoot, 'assets', 'jemcord.png'),                // dev/build
+    path.join(appRoot, 'dist', 'frontend', 'jemcord.png'),      // some builds
+    path.join(appRoot, 'jemcord.png'),                          // AppImage root
+];
+
+const iconSrc = iconSrcCandidates.find(fs.existsSync);
+
+if (!iconSrc) {
+    console.error('Could not find jemcord.png icon in any known location.');
+} else {
+    try {
+        fs.mkdirSync(iconDestDir, { recursive: true });
+        if (!fs.existsSync(iconDest)) {
+            fs.copyFileSync(iconSrc, iconDest);
+        }
+    } catch (err) {
+        console.error('Failed to copy icon:', err);
     }
+}
 
-    // Create desktop entry without indentation
+    // Only create desktop entry if it doesn't exist or needs update
     const desktopEntry = `[Desktop Entry]
 Name=Jemcord
-Exec="${appPath}" "${appRoot}" %U
+Exec="${appPath}" %U
 Terminal=false
 Type=Application
-Icon=${iconPath}
-StartupWMClass=Jemcord
+Icon=${iconDest}
+StartupWMClass=jemcord-electron
 Comment=Gaming Platform
 Categories=Game;Network;Chat;
 MimeType=x-scheme-handler/jemcord;
 X-GNOME-UsesNotifications=true`;
 
     try {
-        const userDesktopFilePath = path.join(app.getPath('home'), '.local', 'share', 'applications', 'jemcord.desktop');
-        console.log('Creating desktop entry at:', userDesktopFilePath);
-        console.log('Using executable path:', appPath);
-        console.log('Using icon path:', iconPath);
-        
-        fs.mkdirSync(path.dirname(userDesktopFilePath), { recursive: true });
-        fs.writeFileSync(userDesktopFilePath, desktopEntry);
-        fs.chmodSync(userDesktopFilePath, '755');
+        fs.mkdirSync(desktopDir, { recursive: true });
+        // Write or overwrite the desktop entry
+        fs.writeFileSync(desktopFilePath, desktopEntry);
+        fs.chmodSync(desktopFilePath, 0o755);
 
+        // Update desktop database
         const { spawn } = require('child_process');
-        spawn('update-desktop-database', [path.dirname(userDesktopFilePath)]);
+        spawn('update-desktop-database', [desktopDir]);
     } catch (error) {
         console.error('Error creating desktop file:', error);
     }
@@ -145,7 +156,7 @@ function createWindow() {
     const mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
-        icon: path.join(__dirname, '../assets/jemcord.png'),
+        icon: path.join(__dirname, '../jemcord.png'),
         autoHideMenuBar: true,
         webPreferences: {
             nodeIntegration: true,
