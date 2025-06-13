@@ -33,41 +33,41 @@ if (process.platform === 'win32') {
     app.setAppUserModelId(app.getName());
     app.setAsDefaultProtocolClient(app.getName());
 } else if (process.platform === 'linux') {
-    // Create or update the desktop file on startup
-    const appPath = app.getPath('exe');
-    const appDir = path.dirname(appPath);
-    const staticAppImage = path.join(appDir, 'Jemcord.AppImage'); // Adjust the name if needed
+    // Get the application root directory
+    const appRoot = path.join(__dirname, '..');
+    
+    // Get the correct paths based on environment
+    const appPath = isDev 
+        ? path.join(appRoot, 'node_modules', '.bin', 'electron') // Use electron binary in dev
+        : process.env.APPIMAGE || app.getPath('exe');
+    
+    // Set correct icon path - always use the app's assets folder
+    const iconPath = path.join(appRoot, 'assets', 'jemcord.png');
 
-    const resourcePath = isDev ?
-        path.join(__dirname, '../assets/jemcord.png') :
-        path.join(process.resourcesPath, 'assets/jemcord.png');
-
-    // Create a static symlink to the current AppImage
-    try {
-        if (!fs.existsSync(staticAppImage) || fs.readlinkSync(staticAppImage) !== appPath) {
-            try {
-                fs.unlinkSync(staticAppImage); // Remove old symlink if it exists
-            } catch {}
-            fs.symlinkSync(appPath, staticAppImage);
-        }
-    } catch (error) {
-        console.error('Error creating symlink:', error);
+    // Ensure the icon exists
+    if (!fs.existsSync(iconPath)) {
+        console.error('Icon not found at:', iconPath);
     }
 
+    // Create desktop entry without indentation
     const desktopEntry = `[Desktop Entry]
-    Name=${app.getName()}
-    Exec="${staticAppImage}" %U
-    Terminal=false
-    Type=Application
-    Icon=${resourcePath}
-    StartupWMClass=${app.getName()}
-    Comment=Gaming Platform
-    Categories=Game;Network;Chat;
-    MimeType=x-scheme-handler/${app.getName()};
-    X-GNOME-UsesNotifications=true`;
+Name=Jemcord
+Exec="${appPath}" "${appRoot}" %U
+Terminal=false
+Type=Application
+Icon=${iconPath}
+StartupWMClass=Jemcord
+Comment=Gaming Platform
+Categories=Game;Network;Chat;
+MimeType=x-scheme-handler/jemcord;
+X-GNOME-UsesNotifications=true`;
 
     try {
-        const userDesktopFilePath = path.join(app.getPath('home'), '.local', 'share', 'applications', `${app.getName().toLowerCase()}.desktop`);
+        const userDesktopFilePath = path.join(app.getPath('home'), '.local', 'share', 'applications', 'jemcord.desktop');
+        console.log('Creating desktop entry at:', userDesktopFilePath);
+        console.log('Using executable path:', appPath);
+        console.log('Using icon path:', iconPath);
+        
         fs.mkdirSync(path.dirname(userDesktopFilePath), { recursive: true });
         fs.writeFileSync(userDesktopFilePath, desktopEntry);
         fs.chmodSync(userDesktopFilePath, '755');
