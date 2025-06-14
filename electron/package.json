@@ -1,6 +1,6 @@
 {
-  "name": "jemcord-electron",
-  "version": "1.0.72",
+  "name": "jemcord",
+  "version": "1.0.8",
   "description": "Electron Application",
   "main": "dist/main.js",
   "scripts": {
@@ -38,7 +38,8 @@
     "icon": "src/assets/jemcord.png",
     "win": {
       "target": "nsis",
-      "artifactName": "jemcord-Setup-${version}.${ext}"
+      "artifactName": "jemcord-Setup-${version}.${ext}",
+      "icon": "assets/jemcord.png"
     },
     "linux": {
       "target": [
