@@ -14,58 +14,115 @@ import { createServer } from 'http';
 
 dotenv.config();
 
+// ES module __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 app.set('trust proxy', true);
 
+// Environment-based CORS configuration
+const isDevelopment = process.env.NODE_ENV === 'development' || !process.env.NODE_ENV;
+
 // Configure CORS for both Express and Socket.IO
 const corsOptions = {
-  origin: [
-    'https://jemcord.mooo.com',
-    'http://jemcord.mooo.com',
-    'https://www.jemcord.mooo.com',
-    'http://www.jemcord.mooo.com',
-    'https://47.6.25.173:3001',     // Production web
-    'https://localhost:80',         // Production web
-    'https://localhost:3001',        // Development web
-    'http://localhost:5173',
-    'https://localhost:19000',       // Expo development
-    'https://localhost:19006',       // Expo web
-    'https://localhost:8081',        // React Native packager
-    'https://10.0.2.2:3001',        // Android emulator
-    'https://10.0.2.2:19000',       // Android Expo
-    'capacitor://localhost',        // Mobile app
-    'https://localhost',             // Local electron
-    'app://.',                      // Electron app
-    'file://',                     // Electron local files
-    'exp://',                      // Expo Go app
-    'localhost'                     // Generic localhost
-  ],
+  origin: isDevelopment 
+    ? [
+        // Development origins - more permissive
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:5173',
+        'http://localhost:8080',
+        'http://localhost:19000',
+        'http://localhost:19006',
+        'http://localhost:8081',
+        'http://10.0.2.2:3001',
+        'http://10.0.2.2:19000',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
+        'http://127.0.0.1:5173',
+        'https://localhost:3000',
+        'https://localhost:3001',
+        'https://localhost:5173',
+        'https://localhost:19000',
+        'https://localhost:19006',
+        'https://localhost:8081',
+        'https://10.0.2.2:3001',
+        'https://10.0.2.2:19000',
+        'capacitor://localhost',
+        'app://.',
+        'file://',
+        'exp://',
+        'localhost',
+        '127.0.0.1'
+      ]
+    : [
+        // Production origins - more restrictive
+        'https://jemcord.mooo.com',
+        'http://jemcord.mooo.com',
+        'https://www.jemcord.mooo.com',
+        'http://www.jemcord.mooo.com',
+        'https://47.6.25.173:3001',
+        'https://localhost:80',
+        'https://localhost:3001',
+        'capacitor://localhost',
+        'app://.',
+        'file://',
+        'exp://'
+      ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
   exposedHeaders: ['Content-Length', 'Content-Type'],
   optionsSuccessStatus: 200,
   preflightContinue: false
 };
 
+// In development, allow all origins for debugging
+if (isDevelopment) {
+  corsOptions.origin = function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+    
+    // Allow all localhost and development origins
+    if (origin.includes('localhost') || 
+        origin.includes('127.0.0.1') || 
+        origin.includes('10.0.2.2') ||
+        origin.startsWith('capacitor://') ||
+        origin.startsWith('app://') ||
+        origin.startsWith('file://') ||
+        origin.startsWith('exp://')) {
+      return callback(null, true);
+    }
+    
+    // Allow specific development domains if needed
+    callback(null, true);
+  };
+}
+
 app.use(cors(corsOptions));
 
-// Add CORS headers to all responses
-/*app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (corsOptions.origin.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', true);
-    res.header('Access-Control-Allow-Methods', corsOptions.methods.join(','));
-    res.header('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(','));
-  }
-  next();
-});*/
+// Add additional CORS headers for development
+if (isDevelopment) {
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(200);
+    } else {
+      next();
+    }
+  });
+}
 
 app.use(express.json());
 
 // Create uploads directory if it doesn't exist
-const uploadsDir = '/var/www/uploads';
+const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -116,9 +173,6 @@ const upload = multer({
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 /*
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 // Serve static files from the React app
 app.use(express.static(path.join(__dirname, '../web/dist')));
 
@@ -147,36 +201,82 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password, email } = req.body;
     
+    console.log('Registration attempt:', { username, email: email ? '***' : 'missing' });
+    
     // Validate input
     if (!username || !password || !email) {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // Check if user exists
-    const userExists = await db.query(
-      'SELECT id FROM users WHERE username = $1 OR email = $2',
-      [username, email]
+    // Normalize username and email to lowercase for consistency
+    const normalizedUsername = username.toLowerCase().trim();
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Additional validation
+    if (normalizedUsername.length < 3 || normalizedUsername.length > 30) {
+      return res.status(400).json({ error: 'Username must be between 3 and 30 characters' });
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(normalizedUsername)) {
+      return res.status(400).json({ error: 'Username can only contain letters, numbers, and underscores' });
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({ error: 'Please enter a valid email address' });
+    }
+
+    // Check if username exists (case-insensitive)
+    const usernameExists = await db.query(
+      'SELECT id FROM users WHERE LOWER(username) = $1',
+      [normalizedUsername]
     );
 
-    if (userExists.rows.length > 0) {
-      return res.status(400).json({ error: 'Username or email already exists' });
+    console.log('Username check result:', { normalizedUsername, exists: usernameExists.rows.length > 0 });
+
+    if (usernameExists.rows.length > 0) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    // Check if email exists (case-insensitive)
+    const emailExists = await db.query(
+      'SELECT id FROM users WHERE LOWER(email) = $1',
+      [normalizedEmail]
+    );
+
+    console.log('Email check result:', { normalizedEmail, exists: emailExists.rows.length > 0 });
+
+    if (emailExists.rows.length > 0) {
+      return res.status(400).json({ error: 'Email already exists' });
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
+    // Create user with normalized username and email
     const result = await db.query(
       'INSERT INTO users (username, password, email) VALUES ($1, $2, $3) RETURNING id, username, email, avatar_url, created_at',
-      [username, hashedPassword, email]
+      [normalizedUsername, hashedPassword, normalizedEmail]
     );
 
     const user = result.rows[0];
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
 
+    console.log('User registered successfully:', { userId: user.id, username: user.username });
     res.status(201).json({ user, token });
   } catch (error) {
     console.error('Registration error:', error);
+    
+    // Handle specific database constraint violations
+    if (error.code === '23505') { // Unique violation
+      if (error.constraint === 'users_username_key') {
+        return res.status(400).json({ error: 'Username already exists' });
+      } else if (error.constraint === 'users_email_key') {
+        return res.status(400).json({ error: 'Email already exists' });
+      }
+    }
+    
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -185,9 +285,12 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
+    // Normalize username to lowercase for case-insensitive matching
+    const normalizedUsername = username.toLowerCase().trim();
+
     const result = await db.query(
-      'SELECT * FROM users WHERE username = $1',
-      [username]
+      'SELECT * FROM users WHERE LOWER(username) = $1',
+      [normalizedUsername]
     );
 
     if (result.rows.length === 0) {
@@ -314,11 +417,22 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('file'), async (
   }
 });;
 
-// Socket.io setup with HTTP server
-const server = createServer(app);
+// Socket.io setup with HTTP/HTTPS server
+let server;
+if (isDevelopment && fs.existsSync('/home/jeremy/servercert/key.pem') && fs.existsSync('/home/jeremy/servercert/cert.pem')) {
+  // Use HTTPS in development if certificates exist
+  const httpsOptions = {
+    key: fs.readFileSync('/home/jeremy/servercert/key.pem'),
+    cert: fs.readFileSync('/home/jeremy/servercert/cert.pem'),
+  };
+  server = https.createServer(httpsOptions, app);
+} else {
+  // Use HTTP
+  server = createServer(app);
+}
 const io = new Server(server, {
   cors: {
-    origin: corsOptions.origin,
+    origin: isDevelopment ? true : corsOptions.origin, // Allow all origins in development
     methods: corsOptions.methods,
     credentials: true,
     allowedHeaders: corsOptions.allowedHeaders
@@ -445,7 +559,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('voice_join', ({ channelId }) => {
-    console.log(`User ${socket.id} joining voice channel ${channelId}`);
+    console.log(`User ${socket.user.username} (${socket.id}) joining voice channel ${channelId}`);
     const voiceRoom = `voice-${channelId}`;
     
     // Get existing users in the voice room before joining
@@ -456,23 +570,44 @@ io.on('connection', (socket) => {
     // Join the room
     socket.join(voiceRoom);
     
+    // Get user info for existing users
+    const existingUsersWithInfo = existingUsers.map(socketId => {
+      const existingSocket = io.sockets.sockets.get(socketId);
+      if (existingSocket && existingSocket.user) {
+        return {
+          socketId: socketId,
+          userId: existingSocket.user.id,
+          username: existingSocket.user.username,
+          avatar_url: existingSocket.user.avatar_url
+        };
+      }
+      return { socketId: socketId };
+    });
+    
     // Send existing users to the new user
     socket.emit('voice_users', { 
-      users: existingUsers
+      users: existingUsersWithInfo
     });
     
     // Notify other users that someone joined
     socket.to(voiceRoom).emit('user_joined_voice', { 
-      userId: socket.id
+      socketId: socket.id,
+      userId: socket.user.id,
+      username: socket.user.username,
+      avatar_url: socket.user.avatar_url
     });
   });
 
   socket.on('voice_leave', ({ channelId }) => {
-    console.log(`User ${socket.id} leaving voice channel ${channelId}`);
+    console.log(`User ${socket.user.username} (${socket.id}) leaving voice channel ${channelId}`);
     const voiceRoom = `voice-${channelId}`;
     socket.leave(voiceRoom);
     // Notify other users in the room that this user left
-    socket.to(voiceRoom).emit('user_left_voice', { userId: socket.id });
+    socket.to(voiceRoom).emit('user_left_voice', { 
+      socketId: socket.id,
+      userId: socket.user.id,
+      username: socket.user.username
+    });
   });
 
   socket.on('voice_offer', ({ offer, to }) => {
@@ -515,8 +650,12 @@ io.on('connection', (socket) => {
     const rooms = socket.rooms;
     rooms.forEach((room) => {
       if (room.startsWith('voice-')) {
-        console.log(`User ${socket.id} leaving voice room ${room}`);
-        socket.to(room).emit('user_left_voice', { userId: socket.id });
+        console.log(`User ${socket.user.username} (${socket.id}) leaving voice room ${room}`);
+        socket.to(room).emit('user_left_voice', { 
+          socketId: socket.id,
+          userId: socket.user.id,
+          username: socket.user.username
+        });
       }
     });
   });
@@ -649,5 +788,6 @@ app.get('/api/test', (req, res) => {
 });
 
 server.listen(process.env.PORT, '0.0.0.0', () => {
-  console.log(`Server listening on port ${process.env.PORT} on all interfaces`);
+  const protocol = isDevelopment && fs.existsSync('/home/jeremy/servercert/key.pem') ? 'https' : 'http';
+  console.log(`Server listening on ${protocol}://localhost:${process.env.PORT} on all interfaces`);
 });

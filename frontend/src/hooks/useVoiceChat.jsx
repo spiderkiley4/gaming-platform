@@ -19,6 +19,7 @@ export function useVoiceChat(channelId, socket) {
       const checkState = () => {
         if (peerConnection.signalingState === expectedState) {
           clearTimeout(timeoutId);
+          peerConnection.removeEventListener('signalingstatechange', checkState);
           resolve(true);
           return;
         }
@@ -88,11 +89,32 @@ export function useVoiceChat(channelId, socket) {
       console.log(`ICE connection state for ${remoteUserId}:`, peerConnection.iceConnectionState);
     };
 
+    // Process any pending ICE candidates for this peer
+    const processPendingCandidates = async () => {
+      const pendingCandidates = pendingIceCandidatesRef.current.get(remoteUserId) || [];
+      console.log(`Processing ${pendingCandidates.length} pending ICE candidates for`, remoteUserId);
+      
+      for (const candidate of pendingCandidates) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          console.log('Added pending ICE candidate for:', remoteUserId);
+        } catch (err) {
+          console.error('Error adding pending ICE candidate:', err);
+        }
+      }
+      
+      // Clear pending candidates
+      pendingIceCandidatesRef.current.set(remoteUserId, []);
+    };
+
     peerConnection.onsignalingstatechange = () => {
       console.log(`Signaling state for ${remoteUserId}:`, peerConnection.signalingState);
       
-      // Process any pending answers when we return to stable state
       if (peerConnection.signalingState === 'stable') {
+        // Process pending ICE candidates when we reach stable state
+        processPendingCandidates();
+        
+        // Process any pending answers
         const pendingAnswer = pendingAnswersRef.current.get(remoteUserId);
         if (pendingAnswer) {
           console.log('Processing pending answer for:', remoteUserId);
@@ -116,48 +138,14 @@ export function useVoiceChat(channelId, socket) {
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         console.log('Sending ICE candidate to', remoteUserId);
-        socket.emit('relay_ice_candidate', {
-          candidate: event.candidate,
-          to: remoteUserId,
-        });
-      }
-    };
-
-    // Process any pending ICE candidates for this peer
-    const processPendingCandidates = async () => {
-      const pendingCandidates = pendingIceCandidatesRef.current.get(remoteUserId) || [];
-      console.log(`Processing ${pendingCandidates.length} pending ICE candidates for`, remoteUserId);
-      
-      for (const candidate of pendingCandidates) {
-        try {
-          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-          console.log('Added pending ICE candidate for:', remoteUserId);
-        } catch (err) {
-          console.error('Error adding pending ICE candidate:', err);
+        if (socket && socket.connected) {
+          socket.emit('relay_ice_candidate', {
+            candidate: event.candidate,
+            to: remoteUserId,
+          });
         }
       }
-      
-      // Clear pending candidates
-      pendingIceCandidatesRef.current.set(remoteUserId, []);
     };
-
-    peerConnection.addEventListener('signalingstatechange', () => {
-      console.log(`Signaling state for ${remoteUserId}:`, peerConnection.signalingState);
-      
-      if (peerConnection.signalingState === 'stable') {
-        // Process pending ICE candidates when we reach stable state
-        processPendingCandidates();
-        
-        // Process any pending answers
-        const pendingAnswer = pendingAnswersRef.current.get(remoteUserId);
-        if (pendingAnswer) {
-          console.log('Processing pending answer for:', remoteUserId);
-          pendingAnswersRef.current.delete(remoteUserId);
-          peerConnection.setRemoteDescription(new RTCSessionDescription(pendingAnswer))
-            .catch(err => console.error('Error processing pending answer:', err));
-        }
-      }
-    });
 
     peerConnection.ontrack = (event) => {
       console.log('Received remote track', event.track.kind, 'from', remoteUserId);
@@ -165,10 +153,13 @@ export function useVoiceChat(channelId, socket) {
       if (stream) {
         setPeers((prevPeers) => {
           const newPeers = new Map(prevPeers);
+          const existingPeer = newPeers.get(remoteUserId);
           newPeers.set(remoteUserId, {
+            ...existingPeer,
             stream,
-            username: `User ${remoteUserId.slice(0, 4)}`,
-            avatar: undefined
+            username: existingPeer?.username || `User ${remoteUserId.slice(0, 4)}`,
+            avatar_url: existingPeer?.avatar_url,
+            userId: existingPeer?.userId
           });
           return newPeers;
         });
@@ -244,8 +235,12 @@ export function useVoiceChat(channelId, socket) {
       setIsMuted(false);
       setIsConnected(true);
       
-      socket.emit('voice_join', { channelId });
-      console.log('Joined voice chat room:', channelId);
+      if (socket && socket.connected) {
+        socket.emit('voice_join', { channelId });
+        console.log('Joined voice chat room:', channelId);
+      } else {
+        console.error('Socket not connected');
+      }
     } catch (err) {
       console.error('Error accessing microphone:', err);
       alert('Error accessing microphone. Please check permissions and try again.');
@@ -279,7 +274,9 @@ export function useVoiceChat(channelId, socket) {
     setIsMuted(true);
 
     // Leave the voice channel
-    socket.emit('voice_leave', { channelId });
+    if (socket && socket.connected) {
+      socket.emit('voice_leave', { channelId });
+    }
   };
 
   useEffect(() => {
@@ -308,42 +305,73 @@ export function useVoiceChat(channelId, socket) {
       }
 
       // Create peer connections for each existing user
-      for (const userId of users) {
-        if (userId === socket.id) continue; // Skip self
-        console.log('Creating offer for existing user:', userId);
+      for (const user of users) {
+        const socketId = user.socketId || user; // Handle both new format and legacy
+        if (socketId === socket.id) continue; // Skip self
+        
+        // Store user info for display
+        if (user.username) {
+          setPeers((prevPeers) => {
+            const newPeers = new Map(prevPeers);
+            newPeers.set(socketId, {
+              username: user.username,
+              avatar_url: user.avatar_url,
+              userId: user.userId,
+              stream: null // Will be set when track is received
+            });
+            return newPeers;
+          });
+        }
+        
+        console.log('Creating offer for existing user:', socketId);
         
         try {
-          const peerConnection = createPeerConnection(userId);
+          const peerConnection = createPeerConnection(socketId);
           if (!peerConnection) {
-            console.error('Failed to create peer connection for', userId);
+            console.error('Failed to create peer connection for', socketId);
             continue;
           }
 
           const offer = await peerConnection.createOffer();
           await peerConnection.setLocalDescription(offer);
-          console.log('Sending offer to:', userId);
-          socket.emit('voice_offer', { offer, to: userId });
+          console.log('Sending offer to:', socketId);
+          socket.emit('voice_offer', { offer, to: socketId });
         } catch (err) {
           console.error('Error creating offer for existing user:', err);
         }
       }
     };
 
-    const handleUserJoined = async ({ userId }) => {
-      console.log('User joined voice:', userId);
+    const handleUserJoined = async ({ socketId, userId, username, avatar_url }) => {
+      console.log('User joined voice:', username || socketId);
+      
+      // Store user info for display
+      if (username) {
+        setPeers((prevPeers) => {
+          const newPeers = new Map(prevPeers);
+          newPeers.set(socketId, {
+            username: username,
+            avatar_url: avatar_url,
+            userId: userId,
+            stream: null // Will be set when track is received
+          });
+          return newPeers;
+        });
+      }
+      
       // Only create an offer if we have a local stream and we are the "older" peer
-      if (localStreamRef.current && socket.id < userId) {
+      if (localStreamRef.current && socket.id < socketId) {
         try {
-          const peerConnection = createPeerConnection(userId);
+          const peerConnection = createPeerConnection(socketId);
           if (!peerConnection) {
-            console.error('Failed to create peer connection for', userId);
+            console.error('Failed to create peer connection for', socketId);
             return;
           }
 
           const offer = await peerConnection.createOffer();
           await peerConnection.setLocalDescription(offer);
-          console.log('Sending offer to:', userId);
-          socket.emit('voice_offer', { offer, to: userId });
+          console.log('Sending offer to:', socketId);
+          socket.emit('voice_offer', { offer, to: socketId });
         } catch (err) {
           console.error('Error creating offer:', err);
         }
@@ -419,7 +447,7 @@ export function useVoiceChat(channelId, socket) {
         console.log('No peer connection yet for ICE candidate from', from);
         // Queue the ICE candidate
         const pendingCandidates = pendingIceCandidatesRef.current.get(from) || [];
-        pendingCandidatesRef.current.set(from, [...pendingCandidates, candidate]);
+        pendingIceCandidatesRef.current.set(from, [...pendingCandidates, candidate]);
         return;
       }
 
@@ -439,24 +467,24 @@ export function useVoiceChat(channelId, socket) {
       }
     };
 
-    const handleUserLeft = ({ userId }) => {
-      console.log('User left voice:', userId);
-      const peerConnection = peerConnectionsRef.current.get(userId);
+    const handleUserLeft = ({ socketId, userId, username }) => {
+      console.log('User left voice:', username || socketId);
+      const peerConnection = peerConnectionsRef.current.get(socketId);
       if (peerConnection) {
         peerConnection.close();
-        peerConnectionsRef.current.delete(userId);
+        peerConnectionsRef.current.delete(socketId);
       }
       
-      const audioElement = audioElementsRef.current.get(userId);
+      const audioElement = audioElementsRef.current.get(socketId);
       if (audioElement) {
         audioElement.srcObject = null;
         audioElement.remove();
-        audioElementsRef.current.delete(userId);
+        audioElementsRef.current.delete(socketId);
       }
       
       setPeers((prevPeers) => {
         const newPeers = new Map(prevPeers);
-        newPeers.delete(userId);
+        newPeers.delete(socketId);
         return newPeers;
       });
     };

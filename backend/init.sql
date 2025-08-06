@@ -8,6 +8,10 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create indexes for case-insensitive searches
+CREATE INDEX IF NOT EXISTS idx_users_username_lower ON users (LOWER(username));
+CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email));
+
 CREATE TABLE IF NOT EXISTS channels (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,

@@ -87,10 +87,12 @@ export const useVoiceChat = () => {
       console.log('Received remote track from', remoteUserId);
       const [stream] = event.streams;
       if (stream) {
+        // Update existing peer data or create new entry
+        const existingPeer = peers.get(remoteUserId);
         peers.set(remoteUserId, { 
           stream,
-          username: `User ${remoteUserId.slice(0, 4)}`,
-          avatar: undefined
+          username: existingPeer?.username || `User ${remoteUserId.slice(0, 4)}`,
+          avatar: existingPeer?.avatar
         });
       }
     };
@@ -160,32 +162,52 @@ export const useVoiceChat = () => {
   };
 
   useEffect(() => {
-    const handleVoiceUsers = async ({ users }: { users: string[] }) => {
+    const handleVoiceUsers = async ({ users }: { users: any[] }) => {
       console.log('Received existing users:', users);
       if (!localStreamRef.current) return;
 
-      for (const userId of users) {
-        if (userId === socket.id) continue;
+      for (const user of users) {
+        const socketId = user.socketId || user; // Handle both new format and legacy
+        if (socketId === socket.id) continue;
+        
+        // Store user info for display
+        if (user.username) {
+          peers.set(socketId, {
+            stream: new MediaStream(), // Placeholder, will be updated when track is received
+            username: user.username,
+            avatar: user.avatar_url
+          });
+        }
         
         try {
-          const peerConnection = await createPeerConnection(userId);
+          const peerConnection = await createPeerConnection(socketId);
           const offer = await peerConnection.createOffer();
           await peerConnection.setLocalDescription(offer);
-          socket.emit('voice_offer', { offer, to: userId });
+          socket.emit('voice_offer', { offer, to: socketId });
         } catch (err) {
           console.error('Error creating offer:', err);
         }
       }
     };
 
-    const handleUserJoined = async ({ userId }: { userId: string }) => {
-      console.log('User joined voice:', userId);
-      if (localStreamRef.current && socket?.id && socket.id < userId) {
+    const handleUserJoined = async ({ socketId, userId, username, avatar_url }: { socketId: string, userId?: string, username?: string, avatar_url?: string }) => {
+      console.log('User joined voice:', username || socketId);
+      
+      // Store user info for display
+      if (username) {
+        peers.set(socketId, {
+          stream: new MediaStream(), // Placeholder, will be updated when track is received
+          username: username,
+          avatar: avatar_url
+        });
+      }
+      
+      if (localStreamRef.current && socket?.id && socket.id < socketId) {
         try {
-          const peerConnection = await createPeerConnection(userId);
+          const peerConnection = await createPeerConnection(socketId);
           const offer = await peerConnection.createOffer();
           await peerConnection.setLocalDescription(offer);
-          socket.emit('voice_offer', { offer, to: userId });
+          socket.emit('voice_offer', { offer, to: socketId });
         } catch (err) {
           console.error('Error creating offer:', err);
         }
@@ -230,14 +252,14 @@ export const useVoiceChat = () => {
       }
     };
 
-    const handleUserLeft = ({ userId }: { userId: string }) => {
-      console.log('User left voice:', userId);
-      const peerConnection = peerConnectionsRef.current.get(userId);
+    const handleUserLeft = ({ socketId, userId, username }: { socketId: string, userId?: string, username?: string }) => {
+      console.log('User left voice:', username || socketId);
+      const peerConnection = peerConnectionsRef.current.get(socketId);
       if (peerConnection) {
         peerConnection.close();
-        peerConnectionsRef.current.delete(userId);
+        peerConnectionsRef.current.delete(socketId);
       }
-      peers.delete(userId);
+      peers.delete(socketId);
     };
 
     socket.on('voice_users', handleVoiceUsers);
