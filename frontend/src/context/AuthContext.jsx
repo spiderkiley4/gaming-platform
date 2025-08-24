@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { getCurrentUser, login, register } from '../api';
+import { getCurrentUser, login, register } from '../api/index';
 import { initSocket, disconnectSocket } from '../socket';
 
 const AuthContext = createContext(null);
@@ -15,31 +15,61 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
+  // Debug user state changes
+  useEffect(() => {
+    console.log('[AuthContext] User state changed:', user);
+  }, [user]);
+
   useEffect(() => {
     const loadUser = async () => {
+      console.log('[AuthContext] loadUser function called');
       const token = localStorage.getItem('token');
+      console.log('[AuthContext] Token from localStorage:', token ? 'Present' : 'Missing');
+      
       if (token) {
         try {
+          console.log('[AuthContext] Attempting to get current user...');
           const res = await getCurrentUser();
-          if (mounted.current) {
-            setUser(res.data);
-            const socket = initSocket();
-            if (!socket) {
-              throw new Error('Failed to initialize socket');
+          console.log('[AuthContext] getCurrentUser successful:', res.data);
+          
+          // Remove mounted check to fix unmounting issue
+          console.log('[AuthContext] Setting user from loadUser:', res.data);
+          setUser(res.data);
+          
+          // Initialize socket asynchronously without blocking the user load
+          setTimeout(() => {
+            try {
+              const socket = initSocket();
+              if (!socket) {
+                console.warn('Socket initialization failed during user load');
+              }
+            } catch (socketError) {
+              console.error('Socket initialization error during user load:', socketError);
+              // Don't throw error here as user load was successful
             }
-          }
+          }, 100);
+          
         } catch (err) {
-          console.error('Failed to load user:', err);
+          console.error('[AuthContext] Failed to load user:', err);
+          console.error('[AuthContext] Error details:', {
+            message: err.message,
+            response: err.response?.data,
+            status: err.response?.status
+          });
           localStorage.removeItem('token');
           disconnectSocket();
-          if (mounted.current) {
-            setUser(null);
-          }
+          
+          // Remove mounted check here too
+          console.log('[AuthContext] Setting user to null due to error');
+          setUser(null);
         }
+      } else {
+        console.log('[AuthContext] No token found, user will remain null');
       }
-      if (mounted.current) {
-        setLoading(false);
-      }
+      
+      // Remove mounted check here too
+      console.log('[AuthContext] Setting loading to false');
+      setLoading(false);
     };
 
     loadUser();
@@ -51,18 +81,34 @@ export const AuthProvider = ({ children }) => {
 
   const loginUser = async (username, password) => {
     try {
+      console.log('[AuthContext] Starting login process...');
       const res = await login(username, password);
+      console.log('[AuthContext] Login API call successful:', res.data);
+      
       localStorage.setItem('token', res.data.token);
-      if (mounted.current) {
-        setUser(res.data.user);
-        const socket = initSocket();
-        if (!socket) {
-          throw new Error('Failed to initialize socket');
+      console.log('[AuthContext] Token stored in localStorage');
+      
+      // Temporarily remove mounted check to debug
+      console.log('[AuthContext] Setting user state:', res.data.user);
+      setUser(res.data.user);
+      
+      // Initialize socket asynchronously without blocking the login
+      setTimeout(() => {
+        try {
+          const socket = initSocket();
+          if (!socket) {
+            console.warn('Socket initialization failed, but login was successful');
+          }
+        } catch (socketError) {
+          console.error('Socket initialization error:', socketError);
+          // Don't throw error here as login was successful
         }
-      }
+      }, 100);
+      
+      console.log('[AuthContext] Login process completed successfully');
       return res.data;
     } catch (err) {
-      console.error('Login failed:', err);
+      console.error('[AuthContext] Login failed:', err);
       localStorage.removeItem('token');
       disconnectSocket();
       throw err;
@@ -73,13 +119,24 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await register(username, email, password);
       localStorage.setItem('token', res.data.token);
-      if (mounted.current) {
-        setUser(res.data.user);
-        const socket = initSocket();
-        if (!socket) {
-          throw new Error('Failed to initialize socket');
+      
+      // Temporarily remove mounted check to debug
+      console.log('[AuthContext] Setting user state from registration:', res.data.user);
+      setUser(res.data.user);
+      
+      // Initialize socket asynchronously without blocking the registration
+      setTimeout(() => {
+        try {
+          const socket = initSocket();
+          if (!socket) {
+            console.warn('Socket initialization failed, but registration was successful');
+          }
+        } catch (socketError) {
+          console.error('Socket initialization error:', socketError);
+          // Don't throw error here as registration was successful
         }
-      }
+      }, 100);
+      
       return res.data;
     } catch (err) {
       console.error('Registration failed:', err);
@@ -93,9 +150,8 @@ export const AuthProvider = ({ children }) => {
     try {
       disconnectSocket();
       localStorage.removeItem('token');
-      if (mounted.current) {
-        setUser(null);
-      }
+      // Remove mounted check to be consistent
+      setUser(null);
     } catch (err) {
       console.error('Logout failed:', err);
     }

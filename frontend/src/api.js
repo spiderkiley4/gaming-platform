@@ -41,4 +41,28 @@ export const createChannel = (name, type = 'text') => {
 export const getMessages = (channelId) => 
   api.get(`/api/channels/${channelId}/messages`);
 
+// Server-related API functions
+export const getServers = () => 
+  api.get('/api/servers');
+
+export const createServer = (name, description) => 
+  api.post('/api/servers', { name, description });
+
+export const getServer = (serverId) => 
+  api.get(`/api/servers/${serverId}`);
+
+export const getServerMembers = (serverId) => 
+  api.get(`/api/servers/${serverId}/members`);
+
+export const getServerChannels = (serverId, type) => {
+  const params = type ? { type } : {};
+  return api.get(`/api/servers/${serverId}/channels`, { params });
+};
+
+export const createServerChannel = (serverId, name, type) => 
+  api.post(`/api/servers/${serverId}/channels`, { name, type });
+
+export const getServerChannelMessages = (serverId, channelId) => 
+  api.get(`/api/servers/${serverId}/channels/${channelId}/messages`);
+
 export default api;

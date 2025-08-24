@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getChannels, createChannel } from './api';
-import { API_URL } from './api';  // Add API_URL import
+import { getChannels, createChannel, API_URL } from './api/index';
 import ChatRoom from './ChatRoom';
 import { initSocket, getSocket } from './socket';
 import AuthForms from './components/AuthForms';
@@ -8,17 +7,29 @@ import { useAuth } from './context/AuthContext';
 import VersionDisplay from './components/VersionDisplay';
 import { useVoiceChat } from './hooks/useVoiceChat';
 import { useSpotifyPresence } from './hooks/useSpotifyPresence';
+import ServerList from './components/ServerList';
+import ServerChannels from './components/ServerChannels';
+import ServerMembers from './components/ServerMembers';
 
 export default function App() {
   const { user, logout, setUser } = useAuth();
+  
+  console.log('[App] Current user state:', user);
+  
+  // Debug re-renders
+  useEffect(() => {
+    console.log('[App] App component re-rendered with user:', user);
+  }, [user]);
+  
   const [textChannels, setTextChannels] = useState([]);
   const [voiceChannels, setVoiceChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(null);
+  const [selectedServer, setSelectedServer] = useState(null);
   const [newChannelName, setNewChannelName] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [newChannelType, setNewChannelType] = useState('text');
   const [isConnected, setIsConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState('friends');
+  const [activeTab, setActiveTab] = useState('servers');
   const [onlineUsers, setOnlineUsers] = useState(new Map());
   const [offlineUsers, setOfflineUsers] = useState(new Map());
   const [isUserListCollapsed, setIsUserListCollapsed] = useState(false);
@@ -300,8 +311,11 @@ export default function App() {
   };
 
   if (!user) {
+    console.log('[App] No user, rendering AuthForms');
     return <AuthForms />;
   }
+
+  console.log('[App] User exists, rendering main app');
 
   // Profile settings modal component
   const ProfileSettingsModal = () => {
@@ -496,6 +510,16 @@ export default function App() {
           <div className="flex justify-center mb-4 border-b border-gray-700">
             <button
               className={`px-4 py-2 ${
+                activeTab === 'servers'
+                  ? 'border-b-2 border-blue-500 text-blue-500'
+                  : 'text-gray-400 hover:text-gray-200'
+              }`}
+              onClick={() => setActiveTab('servers')}
+            >
+              Servers
+            </button>
+            <button
+              className={`px-4 py-2 ${
                 activeTab === 'friends'
                   ? 'border-b-2 border-blue-500 text-blue-500'
                   : 'text-gray-400 hover:text-gray-200'
@@ -518,204 +542,267 @@ export default function App() {
         </div>
 
         <div className="flex h-[calc(100vh-140px)]">
-          {/* Left sidebar - Channels */}
-          <div className="w-64 flex-shrink-0 h-[calc(100vh-140px)]">
-            {/* Text Channels */}
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold mb-2">Text Channels</h2>
-              <ul className="space-y-2">
-                {textChannels.map((ch) => (
-                  <li
-                    key={ch.id}
-                    className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
-                      selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
-                    } relative flex items-center justify-between`}
-                    onClick={() => {
-                      setSelectedChannel({ ...ch, type: 'text' });
-                      // Clear unread and mentions when selecting channel
-                      setUnreadMessages(prev => {
-                        const newMap = new Map(prev);
-                        newMap.delete(ch.id);
-                        return newMap;
-                      });
-                      setMentions(prev => {
-                        const newMap = new Map(prev);
-                        newMap.delete(ch.id);
-                        return newMap;
-                      });
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span># {ch.name}</span>
-                      {mentions.get(ch.id) > 0 && (
-                        <span className="px-1.5 py-0.5 bg-red-500 text-xs rounded-full">
-                          @{mentions.get(ch.id)}
-                        </span>
-                      )}
-                      {!mentions.get(ch.id) && unreadMessages.get(ch.id) > 0 && (
-                        <span className="px-1.5 py-0.5 bg-blue-500 text-xs rounded-full">
-                          {unreadMessages.get(ch.id)}
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {/* Left sidebar - Servers and Channels */}
+          <div className="flex h-[calc(100vh-140px)]">
+            {/* Server List */}
+            {activeTab === 'servers' && (
+              <ServerList
+                selectedServer={selectedServer}
+                onServerSelect={(server) => {
+                  setSelectedServer(server);
+                  setSelectedChannel(null);
+                }}
+                onServerCreate={(server) => {
+                  setSelectedServer(server);
+                }}
+              />
+            )}
 
-            {/* Voice Channels */}
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold mb-2">Voice Channels</h2>
-              <ul className="space-y-2">
-                {voiceChannels.map((ch) => (
-                  <li
-                    key={ch.id}
-                    className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
-                      selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
-                    }`}
-                  >
-                    <div onClick={() => setSelectedChannel({ ...ch, type: 'voice' })}>
-                      🔊 {ch.name}
-                    </div>
-                    {selectedChannel?.id === ch.id && selectedChannel?.type === 'voice' && (
-                      <div className="mt-2 pl-4 text-sm text-gray-400">
-                        {/* Show current user if connected */}
-                        {isVoiceConnected && (
-                          <div className="flex items-center gap-2 py-1">
-                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                            {user.username} (You){isMuted && ' [Muted]'}
+            {/* Server Channels */}
+            {activeTab === 'servers' && selectedServer && (
+              <ServerChannels
+                selectedServer={selectedServer}
+                selectedChannel={selectedChannel}
+                onChannelSelect={(channel) => {
+                  setSelectedChannel(channel);
+                  // Clear unread and mentions when selecting channel
+                  setUnreadMessages(prev => {
+                    const newMap = new Map(prev);
+                    newMap.delete(channel.id);
+                    return newMap;
+                  });
+                  setMentions(prev => {
+                    const newMap = new Map(prev);
+                    newMap.delete(channel.id);
+                    return newMap;
+                  });
+                }}
+                onChannelCreate={(channel) => {
+                  setSelectedChannel(channel);
+                }}
+              />
+            )}
+
+            {/* Legacy Channels (for friends tab) */}
+            {activeTab === 'friends' && (
+              <div className="w-64 flex-shrink-0 h-[calc(100vh-140px)]">
+                {/* Text Channels */}
+                <div className="mb-6">
+                  <h2 className="text-xl font-semibold mb-2">Text Channels</h2>
+                  <ul className="space-y-2">
+                    {textChannels.map((ch) => (
+                      <li
+                        key={ch.id}
+                        className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
+                          selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
+                        } relative flex items-center justify-between`}
+                        onClick={() => {
+                          setSelectedChannel({ ...ch, type: 'text' });
+                          // Clear unread and mentions when selecting channel
+                          setUnreadMessages(prev => {
+                            const newMap = new Map(prev);
+                            newMap.delete(ch.id);
+                            return newMap;
+                          });
+                          setMentions(prev => {
+                            const newMap = new Map(prev);
+                            newMap.delete(ch.id);
+                            return newMap;
+                          });
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span># {ch.name}</span>
+                          {mentions.get(ch.id) > 0 && (
+                            <span className="px-1.5 py-0.5 bg-red-500 text-xs rounded-full">
+                              @{mentions.get(ch.id)}
+                            </span>
+                          )}
+                          {!mentions.get(ch.id) && unreadMessages.get(ch.id) > 0 && (
+                            <span className="px-1.5 py-0.5 bg-blue-500 text-xs rounded-full">
+                              {unreadMessages.get(ch.id)}
+                            </span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Voice Channels */}
+                <div className="mb-6">
+                  <h2 className="text-xl font-semibold mb-2">Voice Channels</h2>
+                  <ul className="space-y-2">
+                    {voiceChannels.map((ch) => (
+                      <li
+                        key={ch.id}
+                        className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
+                          selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
+                        }`}
+                      >
+                        <div onClick={() => setSelectedChannel({ ...ch, type: 'voice' })}>
+                          🔊 {ch.name}
+                        </div>
+                        {selectedChannel?.id === ch.id && selectedChannel?.type === 'voice' && (
+                          <div className="mt-2 pl-4 text-sm text-gray-400">
+                            {/* Show current user if connected */}
+                            {isVoiceConnected && (
+                              <div className="flex items-center gap-2 py-1">
+                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                {user.username} (You){isMuted && ' [Muted]'}
+                              </div>
+                            )}
+                            {/* Show other participants */}
+                            {Array.from(peers.values()).map((peer, index) => (
+                              <div key={peer.userId} className="flex items-center gap-2 py-1">
+                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                {peer.username}
+                              </div>
+                            ))}
                           </div>
                         )}
-                        {/* Show other participants */}
-                        {Array.from(peers.values()).map((peer, index) => (
-                          <div key={peer.userId} className="flex items-center gap-2 py-1">
-                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                            {peer.username}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
-            {/* Channel Creation */}
-            <button
-              className="mt-4 p-2 bg-blue-500 rounded text-white hover:bg-blue-600 w-full"
-              onClick={() => setShowForm(!showForm)}
-            >
-              {showForm ? 'Cancel' : 'Create Channel'}
-            </button>
-
-            {showForm && (
-              <div className="mt-4 space-y-2">
-                <input
-                  type="text"
-                  className="p-2 bg-gray-700 rounded w-full"
-                  placeholder="Enter channel name"
-                  value={newChannelName}
-                  onChange={(e) => setNewChannelName(e.target.value)}
-                />
-                <select
-                  className="p-2 bg-gray-700 rounded w-full"
-                  value={newChannelType}
-                  onChange={(e) => setNewChannelType(e.target.value)}
-                >
-                  <option value="text">Text Channel</option>
-                  <option value="voice">Voice Channel</option>
-                </select>
+                {/* Channel Creation */}
                 <button
-                  onClick={handleCreateChannel}
-                  className="p-2 bg-green-500 rounded text-white hover:bg-green-600 w-full"
+                  className="mt-4 p-2 bg-blue-500 rounded text-white hover:bg-blue-600 w-full"
+                  onClick={() => setShowForm(!showForm)}
                 >
-                  Create Channel
+                  {showForm ? 'Cancel' : 'Create Channel'}
                 </button>
+
+                {showForm && (
+                  <div className="mt-4 space-y-2">
+                    <input
+                      type="text"
+                      className="p-2 bg-gray-700 rounded w-full"
+                      placeholder="Enter channel name"
+                      value={newChannelName}
+                      onChange={(e) => setNewChannelName(e.target.value)}
+                    />
+                    <select
+                      className="p-2 bg-gray-700 rounded w-full"
+                      value={newChannelType}
+                      onChange={(e) => setNewChannelType(e.target.value)}
+                    >
+                      <option value="text">Text Channel</option>
+                      <option value="voice">Voice Channel</option>
+                    </select>
+                    <button
+                      onClick={handleCreateChannel}
+                      className="p-2 bg-green-500 rounded text-white hover:bg-green-600 w-full"
+                    >
+                      Create Channel
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
           {/* Main content - Chat */}
-          <div className={`flex-1 h-[calc(100vh-140px)] ml-4 transition-all duration-300 ${isUserListCollapsed ? 'mr-0' : 'mr-64'}`}>
+          <div className={`flex-1 h-[calc(100vh-140px)] transition-all duration-300 ${isUserListCollapsed ? 'mr-0' : 'mr-64'} bg-gray-900`}>
             {selectedChannel && (
               <ChatRoom 
                 channelId={selectedChannel.id} 
                 userId={user.id} 
                 type={selectedChannel.type}
                 username={user.username}
-                avatar={user.avatar_url} 
+                avatar={user.avatar_url}
+                serverId={selectedServer?.id}
               />
+            )}
+            {!selectedChannel && activeTab === 'servers' && (
+              <div className="h-full flex items-center justify-center bg-gray-900">
+                <div className="text-gray-400 text-center">
+                  <div className="text-4xl mb-4">💬</div>
+                  <div className="text-xl font-medium">Select a channel to start chatting</div>
+                  <div className="text-sm mt-2">Choose from the channels on the left</div>
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Right sidebar - Users List */}
-          <div className={`fixed right-0 top-28 w-64 h-screen bg-gray-800 transform transition-transform duration-300 ease-in-out ${
+          {/* Right sidebar - Users List or Server Members */}
+          <div className={`fixed right-0 top-28 w-64 h-[calc(100vh-140px)] bg-gray-800 transform transition-transform duration-300 ease-in-out ${
             isUserListCollapsed ? 'translate-x-full' : 'translate-x-0'
-          } pt-4 px-4`}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">Users</h2>
-            </div>
-            <div className="space-y-4 overflow-y-auto max-h-[calc(100vh-160px)]">
-              {/* Online Users */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-400 mb-2">Online — {onlineUsers.size}</h3>
-                <div className="space-y-2">
-                  {Array.from(onlineUsers.values()).map(u => (
-                    <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700">
-                      {u.avatar_url ? (
-                        <img 
-                          src={u.avatar_url} 
-                          alt={u.username} 
-                          className="w-8 h-8 rounded-full"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-                          {u.username.charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <div>
-                        <div className="text-xs font-medium">{u.username}</div>
-                        <div className="flex items-center gap-1 text-xs">
-                          {renderUserStatus(u)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+          }`}>
+            {activeTab === 'servers' && selectedServer ? (
+              <ServerMembers 
+                selectedServer={selectedServer}
+                onlineUsers={onlineUsers}
+              />
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold">Users</h2>
                 </div>
-              </div>
+                <div className="space-y-4 overflow-y-auto max-h-[calc(100vh-160px)]">
+                  {/* Online Users */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-400 mb-2">Online — {onlineUsers.size}</h3>
+                    <div className="space-y-2">
+                      {Array.from(onlineUsers.values()).map(u => (
+                        <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700">
+                          {u.avatar_url ? (
+                            <img 
+                              src={u.avatar_url} 
+                              alt={u.username} 
+                              className="w-8 h-8 rounded-full"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                              {u.username.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div>
+                            <div className="text-xs font-medium">{u.username}</div>
+                            <div className="flex items-center gap-1 text-xs">
+                              {renderUserStatus(u)}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* Offline Users */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-400 mb-2">Offline — {offlineUsers.size}</h3>
-                <div className="space-y-2">
-                  {Array.from(offlineUsers.values()).map(u => (
-                    <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700/50">
-                      {u.avatar_url ? (
-                        <img 
-                          src={u.avatar_url} 
-                          alt={u.username} 
-                          className="w-8 h-8 rounded-full opacity-75"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-gray-600/75 flex items-center justify-center">
-                          {u.username.charAt(0).toUpperCase()}
+                  {/* Offline Users */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-400 mb-2">Offline — {offlineUsers.size}</h3>
+                    <div className="space-y-2">
+                      {Array.from(offlineUsers.values()).map(u => (
+                        <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700/50">
+                          {u.avatar_url ? (
+                            <img 
+                              src={u.avatar_url} 
+                              alt={u.username} 
+                              className="w-8 h-8 rounded-full opacity-75"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-gray-600/75 flex items-center justify-center">
+                              {u.username.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div>
+                            <div className="text-sm font-medium text-gray-300">{u.username}</div>
+                            <div className="text-xs text-gray-400">Offline</div>
+                          </div>
                         </div>
-                      )}
-                      <div>
-                        <div className="text-sm font-medium text-gray-300">{u.username}</div>
-                        <div className="text-xs text-gray-400">Offline</div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
 
           {/* Toggle button */}
           <button 
             onClick={() => setIsUserListCollapsed(!isUserListCollapsed)}
-            className="fixed right-4 top-14 p-2 bg-gray-700 hover:bg-gray-600 rounded"
+            className="fixed right-4 top-32 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
             title={isUserListCollapsed ? "Show Users" : "Hide Users"}
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">

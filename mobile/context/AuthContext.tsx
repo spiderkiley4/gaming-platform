@@ -77,12 +77,22 @@ const initSocket = (token: string) => {
     autoConnect: true
   });
 
+  // Add a timeout to prevent hanging
+  const connectionTimeout = setTimeout(() => {
+    if (socket && !socket.connected) {
+      console.warn('[Auth] Socket connection timeout, cleaning up');
+      socket.disconnect();
+      socket = null;
+    }
+  }, 15000); // 15 second timeout
+
   socket.on('connect', () => {
     console.log('[Auth] Socket connected successfully:', {
       id: socket?.id,
       transport: socket?.io?.engine?.transport?.name,
       readyState: socket?.io?.engine?.readyState
     });
+    clearTimeout(connectionTimeout);
     socket?.emit('get_online_users');
   });
 
@@ -90,6 +100,7 @@ const initSocket = (token: string) => {
     console.log('[Socket] Disconnected. Reason:', reason);
     console.log('[Socket] Was connected:', socket?.connected);
     console.log('[Socket] Current state:', socket?.io?.engine?.readyState);
+    clearTimeout(connectionTimeout);
     
     if (reason === 'io server disconnect') {
       console.log('[Socket] Server initiated disconnect, attempting reconnect...');
@@ -104,6 +115,7 @@ const initSocket = (token: string) => {
       transport: socket?.io?.engine?.transport?.name,
       readyState: socket?.io?.engine?.readyState
     });
+    clearTimeout(connectionTimeout);
 
     if (error.message === 'Authentication required' || error.message === 'Invalid token') {
       console.log('[Auth] Authentication error, clearing token');
@@ -209,15 +221,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const token = await AsyncStorage.getItem('token');
         if (token) {
           const res = await getCurrentUser();
-          const newSocket = await initializeSocket();
+          setUser(res.data);
           
-          if (newSocket) {
-            setSocketInstance(newSocket);
-            setUser(res.data);
-          } else {
-            console.warn('[Auth] Could not initialize socket during user load');
-            throw new Error('Socket initialization failed');
-          }
+          // Initialize socket asynchronously without blocking the user load
+          setTimeout(async () => {
+            try {
+              const newSocket = await initializeSocket();
+              if (newSocket) {
+                setSocketInstance(newSocket);
+              } else {
+                console.warn('[Auth] Could not initialize socket during user load');
+              }
+            } catch (socketError) {
+              console.error('[Auth] Socket initialization error during user load:', socketError);
+              // Don't throw error here as user load was successful
+            }
+          }, 100);
+          
         } else {
           console.log('[Auth] No token found during initial load');
         }
@@ -279,15 +299,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await login(username, password);
       await AsyncStorage.setItem('token', res.data.token);
       
-      // Initialize socket before setting user
-      const newSocket = initSocket(res.data.token);
-      if (!newSocket) {
-        throw new Error('Failed to initialize socket');
-      }
-      
-      // Set socket instance and user
-      setSocketInstance(newSocket);
+      // Set user first, then initialize socket asynchronously
       setUser(res.data.user);
+      
+      // Initialize socket asynchronously without blocking the login
+      setTimeout(async () => {
+        try {
+          const newSocket = initSocket(res.data.token);
+          if (newSocket) {
+            setSocketInstance(newSocket);
+          } else {
+            console.warn('[Auth] Socket initialization failed, but login was successful');
+          }
+        } catch (socketError) {
+          console.error('[Auth] Socket initialization error:', socketError);
+          // Don't throw error here as login was successful
+        }
+      }, 100);
       
     } catch (error: any) {
       const message = error.message === 'Network Error' || error.message === 'No internet connection'
@@ -310,14 +338,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await register(username, email, password);
       await AsyncStorage.setItem('token', res.data.token);
       
-      const newSocket = initSocket(res.data.token);
-      if (!newSocket) {
-        throw new Error('Failed to initialize socket');
-      }
-      
-      // Set socket instance and user
-      setSocketInstance(newSocket);
+      // Set user first, then initialize socket asynchronously
       setUser(res.data.user);
+      
+      // Initialize socket asynchronously without blocking the registration
+      setTimeout(async () => {
+        try {
+          const newSocket = initSocket(res.data.token);
+          if (newSocket) {
+            setSocketInstance(newSocket);
+          } else {
+            console.warn('[Auth] Socket initialization failed, but registration was successful');
+          }
+        } catch (socketError) {
+          console.error('[Auth] Socket initialization error:', socketError);
+          // Don't throw error here as registration was successful
+        }
+      }, 100);
+      
     } catch (err) {
       console.error('Registration failed:', err);
       await AsyncStorage.removeItem('token');

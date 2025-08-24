@@ -66,8 +66,33 @@ export const initSocket = () => {
   if (!socket) {
     const token = localStorage.getItem('token');
     if (token) {
-      socket = createSocket(token);
-      setupSocketListeners(socket);
+      try {
+        socket = createSocket(token);
+        setupSocketListeners(socket);
+        
+        // Add a timeout to prevent hanging
+        const connectionTimeout = setTimeout(() => {
+          if (socket && !socket.connected) {
+            console.warn('Socket connection timeout, cleaning up');
+            socket.disconnect();
+            socket = null;
+          }
+        }, 10000); // 10 second timeout
+        
+        // Clear timeout when connected
+        socket.on('connect', () => {
+          clearTimeout(connectionTimeout);
+        });
+        
+        // Clear timeout on error
+        socket.on('connect_error', () => {
+          clearTimeout(connectionTimeout);
+        });
+        
+      } catch (error) {
+        console.error('Error creating socket:', error);
+        socket = null;
+      }
     }
   }
   return socket;

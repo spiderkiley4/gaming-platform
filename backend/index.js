@@ -445,6 +445,9 @@ const io = new Server(server, {
   maxHttpBufferSize: 1e8,
 });
 
+// Prefer explicit PORT, with a sensible default for local development
+const PORT = process.env.PORT || 3001;
+
 // Track all users and their status
 const userStatus = new Map();
 
@@ -532,6 +535,10 @@ io.on('connection', (socket) => {
     socket.join(`channel-${channelId}`);
   });
 
+  socket.on('join_server', (serverId) => {
+    socket.join(`server-${serverId}`);
+  });
+
   socket.on('send_message', async ({ content, channelId, type = 'text' }) => {
     try {
       const result = await db.query(
@@ -554,6 +561,54 @@ io.on('connection', (socket) => {
       io.to(`channel-${channelId}`).emit('new_message', message);
     } catch (error) {
       console.error('Error sending message:', error);
+      socket.emit('error', { message: 'Failed to send message' });
+    }
+  });
+
+  socket.on('send_server_message', async ({ content, serverId, channelId, type = 'text' }) => {
+    try {
+      // Check if user is member of server
+      const memberCheck = await db.query(
+        'SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2',
+        [serverId, socket.user.id]
+      );
+
+      if (memberCheck.rows.length === 0) {
+        socket.emit('error', { message: 'Access denied' });
+        return;
+      }
+
+      // Check if channel belongs to server
+      const channelCheck = await db.query(
+        'SELECT 1 FROM server_channels WHERE id = $1 AND server_id = $2',
+        [channelId, serverId]
+      );
+
+      if (channelCheck.rows.length === 0) {
+        socket.emit('error', { message: 'Channel not found' });
+        return;
+      }
+
+      const result = await db.query(
+        'INSERT INTO messages (content, user_id, channel_id, type) VALUES ($1, $2, $3, $4) RETURNING *',
+        [content, socket.user.id, channelId, type]
+      );
+      
+      // Get user info for the message
+      const userResult = await db.query(
+        'SELECT username, avatar_url FROM users WHERE id = $1',
+        [socket.user.id]
+      );
+      
+      const message = {
+        ...result.rows[0],
+        username: userResult.rows[0].username,
+        avatar_url: userResult.rows[0].avatar_url
+      };
+
+      io.to(`server-${serverId}`).emit('new_server_message', message);
+    } catch (error) {
+      console.error('Error sending server message:', error);
       socket.emit('error', { message: 'Failed to send message' });
     }
   });
@@ -685,6 +740,237 @@ io.on('connection', (socket) => {
   });
 });
 
+// Server routes
+app.get('/api/servers', authenticateToken, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT s.*, sm.nickname, u.username as owner_username 
+       FROM servers s 
+       LEFT JOIN server_members sm ON s.id = sm.server_id AND sm.user_id = $1
+       LEFT JOIN users u ON s.owner_id = u.id
+       WHERE s.owner_id = $1 OR EXISTS (
+         SELECT 1 FROM server_members WHERE server_id = s.id AND user_id = $1
+       )
+       ORDER BY s.created_at DESC`,
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching servers:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/servers', authenticateToken, async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Server name is required' });
+    }
+
+    if (name.length < 2 || name.length > 100) {
+      return res.status(400).json({ error: 'Server name must be between 2 and 100 characters' });
+    }
+
+    // Create server
+    const serverResult = await db.query(
+      'INSERT INTO servers (name, description, owner_id) VALUES ($1, $2, $3) RETURNING *',
+      [name, description || null, req.user.id]
+    );
+    
+    const server = serverResult.rows[0];
+
+    // Add owner as member
+    await db.query(
+      'INSERT INTO server_members (server_id, user_id) VALUES ($1, $2)',
+      [server.id, req.user.id]
+    );
+
+    // Create default roles
+    await db.query(
+      'INSERT INTO server_roles (server_id, name, color, permissions, position) VALUES ($1, $2, $3, $4, $5)',
+      [server.id, '@everyone', '#99AAB5', 0, 0]
+    );
+
+    await db.query(
+      'INSERT INTO server_roles (server_id, name, color, permissions, position) VALUES ($1, $2, $3, $4, $5)',
+      [server.id, 'Admin', '#FF0000', 2147483647, 1] // All permissions
+    );
+
+    // Create default channels
+    await db.query(
+      'INSERT INTO server_channels (server_id, name, type, position) VALUES ($1, $2, $3, $4)',
+      [server.id, 'general', 'text', 0]
+    );
+
+    await db.query(
+      'INSERT INTO server_channels (server_id, name, type, position) VALUES ($1, $2, $3, $4)',
+      [server.id, 'General', 'voice', 1]
+    );
+
+    // Emit new server event
+    io.emit('new_server', server);
+    
+    res.status(201).json(server);
+  } catch (error) {
+    console.error('Error creating server:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/servers/:id', authenticateToken, async (req, res) => {
+  try {
+    const serverId = req.params.id;
+    
+    // Check if user is member of server
+    const memberCheck = await db.query(
+      'SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2',
+      [serverId, req.user.id]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const result = await db.query(
+      `SELECT s.*, u.username as owner_username 
+       FROM servers s 
+       LEFT JOIN users u ON s.owner_id = u.id
+       WHERE s.id = $1`,
+      [serverId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Server not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error fetching server:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/servers/:id/members', authenticateToken, async (req, res) => {
+  try {
+    const serverId = req.params.id;
+    
+    // Check if user is member of server
+    const memberCheck = await db.query(
+      'SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2',
+      [serverId, req.user.id]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const result = await db.query(
+      `SELECT sm.*, u.username, u.avatar_url, u.created_at as user_created_at,
+              array_agg(sr.name) as roles
+       FROM server_members sm
+       LEFT JOIN users u ON sm.user_id = u.id
+       LEFT JOIN server_member_roles smr ON sm.id = smr.member_id
+       LEFT JOIN server_roles sr ON smr.role_id = sr.id
+       WHERE sm.server_id = $1
+       GROUP BY sm.id, u.username, u.avatar_url, u.created_at
+       ORDER BY sm.joined_at ASC`,
+      [serverId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching server members:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/servers/:id/channels', authenticateToken, async (req, res) => {
+  try {
+    const serverId = req.params.id;
+    const type = req.query.type; // Optional type filter
+    
+    // Check if user is member of server
+    const memberCheck = await db.query(
+      'SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2',
+      [serverId, req.user.id]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    let query = 'SELECT * FROM server_channels WHERE server_id = $1';
+    const params = [serverId];
+
+    if (type) {
+      query += ' AND type = $2';
+      params.push(type);
+    }
+
+    query += ' ORDER BY position ASC, created_at ASC';
+
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching server channels:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/api/servers/:id/channels', authenticateToken, async (req, res) => {
+  try {
+    const serverId = req.params.id;
+    const { name, type } = req.body;
+    
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Channel name is required' });
+    }
+    
+    if (!type || !['text', 'voice'].includes(type)) {
+      return res.status(400).json({ error: 'Invalid channel type. Must be "text" or "voice"' });
+    }
+
+    // Check if user is owner or has admin permissions
+    const serverCheck = await db.query(
+      'SELECT owner_id FROM servers WHERE id = $1',
+      [serverId]
+    );
+
+    if (serverCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Server not found' });
+    }
+
+    if (serverCheck.rows[0].owner_id !== req.user.id) {
+      return res.status(403).json({ error: 'Only server owner can create channels' });
+    }
+
+    // Get next position
+    const positionResult = await db.query(
+      'SELECT COALESCE(MAX(position), -1) + 1 as next_position FROM server_channels WHERE server_id = $1',
+      [serverId]
+    );
+    const nextPosition = positionResult.rows[0].next_position;
+
+    const result = await db.query(
+      'INSERT INTO server_channels (server_id, name, type, position) VALUES ($1, $2, $3, $4) RETURNING *',
+      [serverId, name, type, nextPosition]
+    );
+    
+    const channel = result.rows[0];
+
+    // Emit new channel event to server members
+    io.to(`server-${serverId}`).emit('new_server_channel', channel);
+    
+    res.status(201).json(channel);
+  } catch (error) {
+    console.error('Error creating server channel:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Legacy channel routes for backward compatibility
 app.get('/api/channels', async (req, res) => {
   const type = req.query.type; // Optional type filter
   let query = 'SELECT * FROM channels';
@@ -730,14 +1016,77 @@ app.get('/api/channels/:id/messages', async (req, res) => {
   res.json(result.rows);
 });
 
+// Server channel messages endpoint
+app.get('/api/servers/:serverId/channels/:channelId/messages', authenticateToken, async (req, res) => {
+  try {
+    const { serverId, channelId } = req.params;
+    
+    // Check if user is member of server
+    const memberCheck = await db.query(
+      'SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2',
+      [serverId, req.user.id]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Check if channel belongs to server
+    const channelCheck = await db.query(
+      'SELECT 1 FROM server_channels WHERE id = $1 AND server_id = $2',
+      [channelId, serverId]
+    );
+
+    if (channelCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    const result = await db.query(
+      `SELECT m.*, u.username, u.avatar_url 
+       FROM messages m 
+       LEFT JOIN users u ON m.user_id = u.id 
+       WHERE m.channel_id = $1 
+       ORDER BY m.created_at ASC`,
+      [channelId]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching server channel messages:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // File upload endpoint
 app.post('/api/upload-file', authenticateToken, upload.single('file'), async (req, res) => {
   try {
-    const { channelId } = req.body;
+    const { channelId, serverId } = req.body;
     if (!channelId) {
       // Delete the uploaded file if channelId is missing
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: 'Channel ID is required' });
+    }
+
+    // If serverId is provided, validate that user is member of server and channel belongs to server
+    if (serverId) {
+      const memberCheck = await db.query(
+        'SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2',
+        [serverId, req.user.id]
+      );
+
+      if (memberCheck.rows.length === 0) {
+        fs.unlinkSync(req.file.path);
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      const channelCheck = await db.query(
+        'SELECT 1 FROM server_channels WHERE id = $1 AND server_id = $2',
+        [channelId, serverId]
+      );
+
+      if (channelCheck.rows.length === 0) {
+        fs.unlinkSync(req.file.path);
+        return res.status(404).json({ error: 'Channel not found' });
+      }
     }
 
     // Get the URL for the uploaded file - ensure proper protocol
@@ -768,8 +1117,12 @@ app.post('/api/upload-file', authenticateToken, upload.single('file'), async (re
       avatar_url: userResult.rows[0].avatar_url
     };
 
-    // Emit the new message to all users in the channel
-    io.to(`channel-${channelId}`).emit('new_message', message);
+    // Emit the new message to all users in the channel or server
+    if (serverId) {
+      io.to(`server-${serverId}`).emit('new_server_message', message);
+    } else {
+      io.to(`channel-${channelId}`).emit('new_message', message);
+    }
 
     // Only send success status, no need to send the message again since it will come through socket
     res.json({ success: true });
@@ -787,7 +1140,7 @@ app.get('/api/test', (req, res) => {
   res.json({ message: 'server works!' });
 });
 
-server.listen(process.env.PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
   const protocol = isDevelopment && fs.existsSync('/home/jeremy/servercert/key.pem') ? 'https' : 'http';
-  console.log(`Server listening on ${protocol}://localhost:${process.env.PORT} on all interfaces`);
+  console.log(`Server listening on ${protocol}://localhost:${PORT} on all interfaces`);
 });

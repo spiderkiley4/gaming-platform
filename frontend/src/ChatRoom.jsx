@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef, useLayoutEffect } from 'react';
-import { getMessages } from './api';
+import { getMessages, getServerChannelMessages } from './api';
 import { useVoiceChat } from './hooks/useVoiceChat';
 import { getSocket } from './socket';
 import { API_URL } from './api';
 import VideoPlayer from './components/VideoPlayer'; // Adjust the path as necessary
 
-export default function ChatRoom({ channelId, userId, type, username, avatar }) {
+export default function ChatRoom({ channelId, userId, type, username, avatar, serverId }) {
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -101,22 +101,40 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
 
     let isCurrentChannel = true;
 
-    // Join channel
-    socket.emit('join_channel', channelId);
+    // Join channel or server
+    if (serverId) {
+      socket.emit('join_server', serverId);
+    } else {
+      socket.emit('join_channel', channelId);
+    }
     
     // Load initial messages
-    getMessages(channelId).then(res => {
-      if (isCurrentChannel) {
-        setMessages(res.data);
-        // Force scroll to bottom on initial load
-        setTimeout(() => {
-          if (isCurrentChannel) {
-            scrollToBottom();
-            setIsInitialLoad(false);
-          }
-        }, 100);
+    const loadMessages = async () => {
+      try {
+        let res;
+        if (serverId) {
+          // Use the imported function directly
+          res = await getServerChannelMessages(serverId, channelId);
+        } else {
+          res = await getMessages(channelId);
+        }
+        
+        if (isCurrentChannel) {
+          setMessages(res.data);
+          // Force scroll to bottom on initial load
+          setTimeout(() => {
+            if (isCurrentChannel) {
+              scrollToBottom();
+              setIsInitialLoad(false);
+            }
+          }, 100);
+        }
+      } catch (error) {
+        console.error('Error loading messages:', error);
       }
-    });
+    };
+    
+    loadMessages();
 
     // Setup message handler
     const handleNewMessage = (msg) => {
@@ -128,14 +146,15 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
     };
 
     // Subscribe to new messages
-    socket.on('new_message', handleNewMessage);
+    const messageEvent = serverId ? 'new_server_message' : 'new_message';
+    socket.on(messageEvent, handleNewMessage);
 
     // Cleanup function
     return () => {
       isCurrentChannel = false;
-      socket.off('new_message', handleNewMessage);
+      socket.off(messageEvent, handleNewMessage);
     };
-  }, [channelId, type, socket]);
+  }, [channelId, type, socket, serverId]);
 
   // Reset state when channel changes
   useEffect(() => {
@@ -177,6 +196,9 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('channelId', channelId);
+        if (serverId) {
+          formData.append('serverId', serverId);
+        }
         
         // Send the file to the server
         const response = await fetch(`${API_URL}/api/upload-file`, {
@@ -200,10 +222,18 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }) 
         setIsUploading(false);
       }
     } else if (messageInput.trim()) {
-      socket.emit('send_message', {
-        content: messageInput,
-        channelId
-      });
+      if (serverId) {
+        socket.emit('send_server_message', {
+          content: messageInput,
+          serverId,
+          channelId
+        });
+      } else {
+        socket.emit('send_message', {
+          content: messageInput,
+          channelId
+        });
+      }
       setMessageInput('');
     }
   };

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, TextInput, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, TextInput, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/context/AuthContext';
@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 
 export default function AuthScreen() {
   const [isLogin, setIsLogin] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const { loginUser, registerUser } = useAuth();
   const [formData, setFormData] = useState({
     username: '',
@@ -15,6 +16,7 @@ export default function AuthScreen() {
   });
 
   const handleSubmit = async () => {
+    setIsLoading(true);
     try {
       if (isLogin) {
         await loginUser(formData.username, formData.password);
@@ -24,6 +26,8 @@ export default function AuthScreen() {
       router.replace('/(tabs)');
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.error || 'An error occurred');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -64,12 +68,17 @@ export default function AuthScreen() {
         />
 
         <TouchableOpacity 
-          style={styles.button}
+          style={[styles.button, isLoading && styles.buttonDisabled]}
           onPress={handleSubmit}
+          disabled={isLoading}
         >
-          <ThemedText style={styles.buttonText}>
-            {isLogin ? 'Login' : 'Register'}
-          </ThemedText>
+          {isLoading ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <ThemedText style={styles.buttonText}>
+              {isLogin ? 'Login' : 'Register'}
+            </ThemedText>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity 
@@ -116,6 +125,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: {
     color: 'white',
