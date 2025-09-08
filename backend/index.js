@@ -431,8 +431,9 @@ if (isDevelopment && fs.existsSync('/home/jeremy/servercert/key.pem') && fs.exis
   server = createServer(app);
 }
 const io = new Server(server, {
+  path: '/api/socket.io',
   cors: {
-    origin: isDevelopment ? true : corsOptions.origin, // Allow all origins in development
+    origin: isDevelopment ? true : corsOptions.origin,
     methods: corsOptions.methods,
     credentials: true,
     allowedHeaders: corsOptions.allowedHeaders

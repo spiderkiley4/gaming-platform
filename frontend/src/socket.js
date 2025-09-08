@@ -7,6 +7,7 @@ const wsUrl = API_URL;
 let socket = null;
 
 const createSocket = (token) => io(wsUrl, {
+  path: '/api/socket.io',
   transports: ['websocket', 'polling'],
   upgrade: true,
   auth: { token },
