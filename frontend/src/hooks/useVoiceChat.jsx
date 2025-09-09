@@ -10,6 +10,19 @@ export function useVoiceChat(channelId, socket) {
   const pendingAnswersRef = useRef(new Map());
   const pendingIceCandidatesRef = useRef(new Map());
   const volumesRef = useRef(new Map()); // remoteUserId -> volume (0.0 - 1.0)
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [localLevel, setLocalLevel] = useState(0);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const levelRafRef = useRef(null);
+  // Local sensitivity calibration
+  const localNoiseFloorRef = useRef(0.002);
+  const localCalibratingRef = useRef(true);
+  const localCalibEndTimeRef = useRef(0);
+  // Remote speaking detection
+  const remoteAudioContextRef = useRef(null);
+  const remoteAnalysersRef = useRef(new Map()); // remoteUserId -> { analyser, source, dataArray, speaking, silenceMs, lastTick, noiseFloor }
+  const remoteSpeakingRafRef = useRef(null);
 
   const waitForSignalingState = async (peerConnection, expectedState, timeout = 5000) => {
     if (peerConnection.signalingState === expectedState) {
@@ -33,6 +46,242 @@ export function useVoiceChat(channelId, socket) {
 
       peerConnection.addEventListener('signalingstatechange', checkState);
     });
+  };
+
+  const setupLocalAnalyser = (stream) => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) {
+        console.warn('Web Audio API not supported');
+        return;
+      }
+      const audioCtx = new AudioCtx();
+      audioContextRef.current = audioCtx;
+      const resumeIfNeeded = async () => {
+        try {
+          if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+          }
+        } catch (_) {}
+      };
+      resumeIfNeeded();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.88;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      let speaking = false;
+      let silenceMs = 0;
+      let lastTick = performance.now();
+
+      // Calibration for first 800ms to capture room noise
+      localCalibratingRef.current = true;
+      localCalibEndTimeRef.current = performance.now() + 800;
+      localNoiseFloorRef.current = 0.002; // default fallback
+
+      const minThreshold = 0.004; // base minimal threshold
+      const gainFactor = 3.0; // how far above floor we trigger
+      const releaseMs = 200; // quicker release for responsiveness
+
+      const tick = () => {
+        analyser.getByteTimeDomainData(dataArray);
+        // Compute RMS
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const v = (dataArray[i] - 128) / 128; // -1..1
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        setLocalLevel(rms);
+
+        const now = performance.now();
+        const dt = now - lastTick;
+        lastTick = now;
+
+        // Calibration window
+        if (localCalibratingRef.current) {
+          if (now < localCalibEndTimeRef.current) {
+            // track running average of floor
+            const alpha = 0.05;
+            localNoiseFloorRef.current = (1 - alpha) * localNoiseFloorRef.current + alpha * rms;
+          } else {
+            localCalibratingRef.current = false;
+          }
+        }
+
+        const dynamicThreshold = Math.max(minThreshold, localNoiseFloorRef.current * gainFactor);
+
+        if (!isMuted && rms > dynamicThreshold) {
+          speaking = true;
+          silenceMs = 0;
+        } else {
+          silenceMs += dt;
+          if (silenceMs >= releaseMs) {
+            speaking = false;
+          }
+        }
+        setIsSpeaking(speaking);
+
+        levelRafRef.current = requestAnimationFrame(tick);
+      };
+
+      levelRafRef.current = requestAnimationFrame(tick);
+    } catch (e) {
+      console.warn('Failed to setup local analyser', e);
+    }
+  };
+
+  const teardownLocalAnalyser = () => {
+    if (levelRafRef.current) {
+      cancelAnimationFrame(levelRafRef.current);
+      levelRafRef.current = null;
+    }
+    analyserRef.current = null;
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch (_) {}
+      audioContextRef.current = null;
+    }
+    setLocalLevel(0);
+    setIsSpeaking(false);
+  };
+
+  const ensureRemoteAudioContext = () => {
+    if (remoteAudioContextRef.current) return remoteAudioContextRef.current;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) {
+      console.warn('Web Audio API not supported for remote analysis');
+      return null;
+    }
+    const ctx = new AudioCtx();
+    remoteAudioContextRef.current = ctx;
+    // Best-effort resume
+    try { if (ctx.state === 'suspended') { ctx.resume(); } } catch (_) {}
+    return ctx;
+  };
+
+  const startRemoteSpeakingLoop = () => {
+    if (remoteSpeakingRafRef.current) return; // already running
+    const releaseMs = 200;
+    const minThreshold = 0.004;
+    const gainFactor = 3.0;
+
+    const tick = () => {
+      const entries = Array.from(remoteAnalysersRef.current.entries());
+      for (const [remoteUserId, ctx] of entries) {
+        try {
+          ctx.analyser.getByteTimeDomainData(ctx.dataArray);
+          let sum = 0;
+          for (let i = 0; i < ctx.dataArray.length; i++) {
+            const v = (ctx.dataArray[i] - 128) / 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / ctx.dataArray.length);
+          const now = performance.now();
+          const dt = now - ctx.lastTick;
+          ctx.lastTick = now;
+
+          // Update noise floor (EMA)
+          const alpha = 0.05;
+          ctx.noiseFloor = (1 - alpha) * (ctx.noiseFloor || 0.002) + alpha * rms;
+          const dynamicThreshold = Math.max(minThreshold, (ctx.noiseFloor || 0.002) * gainFactor);
+
+          let speaking = ctx.speaking;
+          if (rms > dynamicThreshold) {
+            speaking = true;
+            ctx.silenceMs = 0;
+          } else {
+            ctx.silenceMs += dt;
+            if (ctx.silenceMs >= releaseMs) speaking = false;
+          }
+
+          if (speaking !== ctx.speaking) {
+            ctx.speaking = speaking;
+            // update peers map with minimal changes
+            setPeers((prev) => {
+              const next = new Map(prev);
+              const existing = next.get(remoteUserId);
+              if (!existing) return prev;
+              next.set(remoteUserId, { ...existing, speaking });
+              return next;
+            });
+          }
+        } catch (e) {
+          // If analyser fails, skip this peer for now
+        }
+      }
+      if (remoteAnalysersRef.current.size > 0) {
+        remoteSpeakingRafRef.current = requestAnimationFrame(tick);
+      } else {
+        remoteSpeakingRafRef.current = null;
+      }
+    };
+    remoteSpeakingRafRef.current = requestAnimationFrame(tick);
+  };
+
+  const setupRemoteAnalyser = (remoteUserId, stream) => {
+    try {
+      const audioCtx = ensureRemoteAudioContext();
+      if (!audioCtx) return;
+      // Avoid duplicate
+      if (remoteAnalysersRef.current.has(remoteUserId)) return;
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.88;
+      // Connect source to analyser and to gain->destination for playback
+      source.connect(analyser);
+      const gainNode = audioCtx.createGain();
+      const savedGain = volumesRef.current.get(remoteUserId);
+      gainNode.gain.value = typeof savedGain === 'number' ? savedGain : 1.0;
+      source.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      remoteAnalysersRef.current.set(remoteUserId, {
+        analyser,
+        source,
+        gainNode,
+        dataArray,
+        speaking: false,
+        silenceMs: 0,
+        lastTick: performance.now(),
+        noiseFloor: 0.002
+      });
+      startRemoteSpeakingLoop();
+    } catch (e) {
+      console.warn('Failed to setup remote analyser for', remoteUserId, e);
+    }
+  };
+
+  const teardownRemoteAnalyser = (remoteUserId) => {
+    const entry = remoteAnalysersRef.current.get(remoteUserId);
+    if (!entry) return;
+    try {
+      // Disconnect nodes
+      try { entry.source.disconnect(); } catch (_) {}
+      try { entry.analyser.disconnect(); } catch (_) {}
+      try { entry.gainNode.disconnect(); } catch (_) {}
+    } finally {
+      remoteAnalysersRef.current.delete(remoteUserId);
+    }
+  };
+
+  const teardownAllRemoteAnalysers = () => {
+    for (const remoteUserId of remoteAnalysersRef.current.keys()) {
+      teardownRemoteAnalyser(remoteUserId);
+    }
+    if (remoteSpeakingRafRef.current) {
+      cancelAnimationFrame(remoteSpeakingRafRef.current);
+      remoteSpeakingRafRef.current = null;
+    }
+    if (remoteAudioContextRef.current) {
+      try { remoteAudioContextRef.current.close(); } catch (_) {}
+      remoteAudioContextRef.current = null;
+    }
   };
 
   const createPeerConnection = (remoteUserId) => {
@@ -78,6 +327,7 @@ export function useVoiceChat(channelId, socket) {
           audioElement.remove();
           audioElementsRef.current.delete(remoteUserId);
         }
+        teardownRemoteAnalyser(remoteUserId);
         setPeers((prevPeers) => {
           const newPeers = new Map(prevPeers);
           newPeers.delete(remoteUserId);
@@ -161,38 +411,26 @@ export function useVoiceChat(channelId, socket) {
             username: existingPeer?.username || `User ${remoteUserId.slice(0, 4)}`,
             avatar_url: existingPeer?.avatar_url,
             userId: existingPeer?.userId,
-            volume: existingPeer?.volume ?? (volumesRef.current.get(remoteUserId) ?? 1)
+            volume: existingPeer?.volume ?? (volumesRef.current.get(remoteUserId) ?? 1),
+            speaking: existingPeer?.speaking ?? false
           });
           return newPeers;
         });
 
-        // Audio element management
+        // Audio element management (muted, since playback is via Web Audio)
         let audioElement = audioElementsRef.current.get(remoteUserId);
         if (!audioElement) {
           audioElement = new Audio();
           audioElement.autoplay = true;
-          audioElement.addEventListener('play', () => console.log('Audio playing for', remoteUserId));
-          audioElement.addEventListener('error', (e) => console.error('Audio error:', e));
+          audioElement.muted = true;
+          audioElement.addEventListener('play', () => console.log('Audio element (muted) for', remoteUserId));
+          audioElement.addEventListener('error', (e) => console.error('Audio element error:', e));
           audioElementsRef.current.set(remoteUserId, audioElement);
         }
         audioElement.srcObject = stream;
-        // Apply saved volume or default to 1
-        const vol = volumesRef.current.get(remoteUserId);
-        audioElement.volume = typeof vol === 'number' ? vol : 1;
         
-        // Play with error handling
-        const playPromise = audioElement.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(e => {
-            console.error('Error playing audio:', e);
-            // Try playing again with user interaction
-            const retryPlay = () => {
-              audioElement.play().catch(e => console.error('Retry play error:', e));
-              document.removeEventListener('click', retryPlay);
-            };
-            document.addEventListener('click', retryPlay);
-          });
-        }
+        // Setup analyser + gain playback for remote speaking detection and volume control
+        setupRemoteAnalyser(remoteUserId, stream);
       }
     };
 
@@ -203,8 +441,9 @@ export function useVoiceChat(channelId, socket) {
 
   const cleanupConnections = () => {
     // Close all peer connections
-    peerConnectionsRef.current.forEach((connection) => {
-      connection.close();
+    peerConnectionsRef.current.forEach((connection, remoteUserId) => {
+      try { connection.close(); } catch (_) {}
+      teardownRemoteAnalyser(remoteUserId);
     });
     peerConnectionsRef.current.clear();
     pendingIceCandidatesRef.current.clear();
@@ -239,6 +478,8 @@ export function useVoiceChat(channelId, socket) {
       localStreamRef.current = stream;
       setIsMuted(false);
       setIsConnected(true);
+
+      setupLocalAnalyser(stream);
       
       if (socket && socket.connected) {
         socket.emit('voice_join', { channelId });
@@ -260,6 +501,12 @@ export function useVoiceChat(channelId, socket) {
         console.log('Track enabled:', !newMutedState);
       });
       setIsMuted(newMutedState);
+      // Broadcast mute status to others
+      try {
+        if (socket && socket.connected) {
+          socket.emit('voice_mute', { channelId, muted: newMutedState });
+        }
+      } catch (_) {}
     }
   };
 
@@ -271,6 +518,9 @@ export function useVoiceChat(channelId, socket) {
       console.log('Stopped track:', track.kind);
     });
     localStreamRef.current = null;
+
+    teardownLocalAnalyser();
+    teardownAllRemoteAnalysers();
 
     cleanupConnections();
 
@@ -322,7 +572,9 @@ export function useVoiceChat(channelId, socket) {
               username: user.username,
               avatar_url: user.avatar_url,
               userId: user.userId,
-              stream: null // Will be set when track is received
+              stream: null, // Will be set when track is received
+              speaking: false,
+              muted: !!user.muted
             });
             return newPeers;
           });
@@ -347,7 +599,7 @@ export function useVoiceChat(channelId, socket) {
       }
     };
 
-    const handleUserJoined = async ({ socketId, userId, username, avatar_url }) => {
+    const handleUserJoined = async ({ socketId, userId, username, avatar_url, muted }) => {
       console.log('User joined voice:', username || socketId);
       
       // Store user info for display
@@ -358,7 +610,9 @@ export function useVoiceChat(channelId, socket) {
             username: username,
             avatar_url: avatar_url,
             userId: userId,
-            stream: null // Will be set when track is received
+            stream: null, // Will be set when track is received
+            speaking: false,
+            muted: !!muted
           });
           return newPeers;
         });
@@ -381,6 +635,16 @@ export function useVoiceChat(channelId, socket) {
           console.error('Error creating offer:', err);
         }
       }
+    };
+
+    const handleUserVoiceMute = ({ socketId, userId, muted }) => {
+      setPeers((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(socketId);
+        if (!existing) return prev;
+        next.set(socketId, { ...existing, muted: !!muted });
+        return next;
+      });
     };
 
     const handleVoiceOffer = async ({ offer, from }) => {
@@ -488,6 +752,8 @@ export function useVoiceChat(channelId, socket) {
       }
       // Remove volume tracking
       volumesRef.current.delete(socketId);
+
+      teardownRemoteAnalyser(socketId);
       
       setPeers((prevPeers) => {
         const newPeers = new Map(prevPeers);
@@ -498,6 +764,7 @@ export function useVoiceChat(channelId, socket) {
 
     socket.on('voice_users', handleExistingUsers);
     socket.on('user_joined_voice', handleUserJoined);
+    socket.on('user_voice_mute', handleUserVoiceMute);
     socket.on('voice_offer', handleVoiceOffer);
     socket.on('voice_answer', handleVoiceAnswer);
     socket.on('relay_ice_candidate', handleIceCandidate);
@@ -506,6 +773,7 @@ export function useVoiceChat(channelId, socket) {
     return () => {
       socket.off('voice_users', handleExistingUsers);
       socket.off('user_joined_voice', handleUserJoined);
+      socket.off('user_voice_mute', handleUserVoiceMute);
       socket.off('voice_offer', handleVoiceOffer);
       socket.off('voice_answer', handleVoiceAnswer);
       socket.off('relay_ice_candidate', handleIceCandidate);
@@ -524,17 +792,26 @@ export function useVoiceChat(channelId, socket) {
   return {
     isMuted,
     isConnected,
+    isSpeaking,
+    localLevel,
     peers,
     startVoiceChat,
     toggleMute,
     disconnect,
     setPeerVolume: (remoteUserId, volume) => {
       try {
-        const clamped = Math.max(0, Math.min(1, Number(volume)));
+        // Accept up to 5.0 (500%)
+        const clamped = Math.max(0, Math.min(5, Number(volume)));
         volumesRef.current.set(remoteUserId, clamped);
+        // Update Web Audio gain if present
+        const entry = remoteAnalysersRef.current.get(remoteUserId);
+        if (entry?.gainNode) {
+          entry.gainNode.gain.value = clamped;
+        }
+        // Keep audio element volume at 0 (we use Web Audio), but set anyway for safety
         const audio = audioElementsRef.current.get(remoteUserId);
         if (audio) {
-          audio.volume = clamped;
+          audio.volume = 0;
         }
         setPeers((prev) => {
           const next = new Map(prev);

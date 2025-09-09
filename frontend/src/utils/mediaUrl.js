@@ -15,7 +15,7 @@ export const resolveAvatarUrl = (url) => {
     // Assume avatars are stored under uploads if not specified
     path = `/api/uploads${path}`;
   }
-  return `${base}${path}`;
+  return appendToken(`${base}${path}`);
 };
 
 // Generic resolver for any media or file URLs coming from messages
@@ -40,7 +40,28 @@ export const resolveMediaUrl = (url) => {
     // Any other relative path should be treated as an upload
     path = `/api/uploads${path}`;
   }
-  return `${base}${path}`;
+  return appendToken(`${base}${path}`);
 };
+
+// Append JWT token to uploads URLs so <img>/<video> can be authorized
+function appendToken(url) {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) return url;
+    const u = new URL(url, window?.location?.origin || 'http://localhost');
+    // Only add token for uploads endpoints
+    if (!u.pathname.startsWith('/api/uploads')) return url;
+    if (u.searchParams.has('token')) return u.toString();
+    u.searchParams.set('token', token);
+    return u.toString();
+  } catch (_) {
+    // Fallback: naive append
+    const token = localStorage.getItem('token');
+    if (!token) return url;
+    if (url.includes('token=')) return url;
+    const sep = url.includes('?') ? '&' : '?';
+    return `${url}${sep}token=${encodeURIComponent(token)}`;
+  }
+}
 
 

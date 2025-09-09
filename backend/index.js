@@ -759,6 +759,9 @@ io.on('connection', async (socket) => {
     // Join the room
     socket.join(voiceRoom);
     
+    // Ensure a voice muted flag exists on the socket
+    if (typeof socket.voiceMuted !== 'boolean') socket.voiceMuted = false;
+    
     // Get user info for existing users
     const existingUsersWithInfo = existingUsers.map(socketId => {
       const existingSocket = io.sockets.sockets.get(socketId);
@@ -767,7 +770,8 @@ io.on('connection', async (socket) => {
           socketId: socketId,
           userId: existingSocket.user.id,
           username: existingSocket.user.username,
-          avatar_url: existingSocket.user.avatar_url
+          avatar_url: existingSocket.user.avatar_url,
+          muted: !!existingSocket.voiceMuted
         };
       }
       return { socketId: socketId };
@@ -783,7 +787,8 @@ io.on('connection', async (socket) => {
       socketId: socket.id,
       userId: socket.user.id,
       username: socket.user.username,
-      avatar_url: socket.user.avatar_url
+      avatar_url: socket.user.avatar_url,
+      muted: !!socket.voiceMuted
     });
 
     // Broadcast updated count and members for this channel
@@ -797,6 +802,21 @@ io.on('connection', async (socket) => {
       io.emit('voice_channel_count', { channelId, count: socketsInRoom.length, users });
     } catch (err) {
       console.error('Error broadcasting voice join count:', err);
+    }
+  });
+  
+  // Broadcast user mute status within a voice room
+  socket.on('voice_mute', ({ channelId, muted }) => {
+    try {
+      const voiceRoom = `voice-${channelId}`;
+      socket.voiceMuted = !!muted;
+      socket.to(voiceRoom).emit('user_voice_mute', {
+        socketId: socket.id,
+        userId: socket.user.id,
+        muted: !!muted
+      });
+    } catch (err) {
+      console.error('Error handling voice_mute:', err);
     }
   });
 

@@ -20,7 +20,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
   const socket = getSocket();
-  const { isMuted, isConnected, peers, startVoiceChat, toggleMute, disconnect, setPeerVolume } = useVoiceChat(channelId, socket);
+  const { isMuted, isConnected, isSpeaking, peers, startVoiceChat, toggleMute, disconnect, setPeerVolume } = useVoiceChat(channelId, socket);
 
   // Get all online users for mention suggestions
   const [users, setUsers] = useState([]);
@@ -376,7 +376,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
           <div className="space-y-3">
             {/* Current user */}
             <div className="flex items-center gap-3 p-2 bg-gray-600 rounded">
-              <div className="relative">
+              <div className={`relative rounded-full ${isSpeaking ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-gray-700' : ''}`}>
                 {avatar ? (
                   <img 
                     src={resolveAvatarUrl(avatar)} 
@@ -390,14 +390,14 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                 )}
                 {isConnected && (
                   <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-gray-700 ${
-                    isMuted ? 'bg-red-500' : 'bg-green-500'
+                    isMuted ? 'bg-red-500' : (isSpeaking ? 'bg-green-500 animate-pulse' : 'bg-gray-400')
                   }`}></div>
                 )}
               </div>
               <div>
                 <div className="font-medium">{username} (You)</div>
                 <div className="text-sm text-gray-400">
-                  {isConnected ? (isMuted ? 'Muted' : 'Speaking') : 'Not Connected'}
+                  {isConnected ? (isMuted ? 'Muted' : (isSpeaking ? 'Speaking' : 'Not speaking')) : 'Not Connected'}
                 </div>
               </div>
             </div>
@@ -409,7 +409,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
               const displayAvatar = peer.avatar_url || fallbackUser?.avatar_url || null;
               return (
                 <div key={peerId} className="flex items-center gap-3 p-2 bg-gray-600 rounded">
-                  <div className="relative">
+                  <div className={`relative rounded-full ${peer.speaking ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-gray-700' : ''}`}>
                     {displayAvatar ? (
                       <img 
                         src={resolveAvatarUrl(displayAvatar)} 
@@ -421,7 +421,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                         {displayUsername.charAt(0).toUpperCase()}
                       </div>
                     )}
-                    <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 border-2 border-gray-700"></div>
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-gray-700 ${peer.muted ? 'bg-red-500' : (peer.speaking ? 'bg-green-500 animate-pulse' : 'bg-gray-400')}`}></div>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{displayUsername}</div>
@@ -429,13 +429,25 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                       <input
                         type="range"
                         min="0"
-                        max="1"
+                        max="2"
                         step="0.01"
-                        value={typeof peer.volume === 'number' ? peer.volume : 1}
+                        value={typeof peer.volume === 'number' ? Math.min(2, peer.volume) : 1}
                         onChange={(e) => setPeerVolume(peerId, parseFloat(e.target.value))}
                         className="w-40 accent-blue-500"
                       />
-                      <span className="w-10 text-right">{Math.round((peer.volume ?? 1) * 100)}%</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={5}
+                        step={0.01}
+                        value={typeof peer.volume === 'number' ? peer.volume : 1}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!Number.isNaN(val)) setPeerVolume(peerId, val);
+                        }}
+                        className="w-16 bg-gray-600 text-gray-100 px-1 py-0.5 rounded"
+                      />
+                      <span className="w-12 text-right">{Math.round((peer.volume ?? 1) * 100)}%</span>
                     </div>
                   </div>
                 </div>

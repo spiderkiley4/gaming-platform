@@ -112,10 +112,9 @@ export default function ServerList({ selectedServer, onServerSelect, onServerCre
             className="w-12 h-12 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 hover:shadow-lg group"
             title="Join Server"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
-  <rect x="10" y="30" width="80" height="40" rx="20" ry="20" fill="none" stroke="black" stroke-width="5"/>
-  <rect x="70" y="30" width="80" height="40" rx="20" ry="20" fill="none" stroke="black" stroke-width="5"/>
-</svg>
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
             <div className="absolute left-16 top-1/2 transform -translate-y-1/2 bg-gray-900 text-white px-3 py-2 rounded-lg text-sm whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 shadow-xl">
               Join Server
               <div className="absolute right-full top-1/2 transform -translate-y-1/2 w-0 h-0 border-l-0 border-r-4 border-t-4 border-b-4 border-transparent border-r-gray-900"></div>
