@@ -167,8 +167,95 @@ const upload = multer({
   }
 });
 
-// Serve uploaded files statically
-app.use('/api/uploads', express.static(uploadsDir));
+// Serve uploaded files with auth and Range support
+// Note: protect direct access to uploads; require JWT via Authorization or query token
+app.get('/api/uploads/:filename', (req, res, next) => {
+  // Inline auth to support token via header or query param for <img>/<video>
+  const header = req.headers['authorization'];
+  const bearerToken = header && header.split(' ')[1];
+  const queryToken = req.query.token;
+  const token = bearerToken || queryToken;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err) => {
+    if (err) return res.status(403).json({ error: 'Invalid token' });
+
+    const filePath = path.join(uploadsDir, path.basename(req.params.filename));
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const stat = fs.statSync(filePath);
+    const range = req.headers.range;
+
+    if (range) {
+      // Parse Range header: e.g., bytes=start-end
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+      if (isNaN(start) || isNaN(end) || start > end || start < 0 || end >= stat.size) {
+        return res.status(416).set({ 'Content-Range': `bytes */${stat.size}` }).end();
+      }
+
+      const chunkSize = (end - start) + 1;
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': getMimeType(filePath)
+      });
+      const fileStream = fs.createReadStream(filePath, { start, end });
+      return fileStream.pipe(res);
+    }
+
+    res.writeHead(200, {
+      'Content-Length': stat.size,
+      'Content-Type': getMimeType(filePath),
+      'Accept-Ranges': 'bytes'
+    });
+    const fileStream = fs.createReadStream(filePath);
+    return fileStream.pipe(res);
+  });
+});
+
+// Minimal mime resolver for common types
+function getMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.png':
+      return 'image/png';
+    case '.gif':
+      return 'image/gif';
+    case '.webp':
+      return 'image/webp';
+    case '.mp4':
+      return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
+    case '.ogg':
+      return 'video/ogg';
+    case '.mov':
+      return 'video/quicktime';
+    case '.pdf':
+      return 'application/pdf';
+    case '.txt':
+      return 'text/plain; charset=utf-8';
+    case '.zip':
+      return 'application/zip';
+    case '.rar':
+      return 'application/vnd.rar';
+    case '.7z':
+      return 'application/x-7z-compressed';
+    default:
+      return 'application/octet-stream';
+  }
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 

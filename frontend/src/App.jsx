@@ -561,89 +561,30 @@ export default function App() {
             )}
           </div>
 
-          {/* Right sidebar - Users List or Server Members */}
-          <div className={`h-[calc(100vh-140px)] bg-gray-800 transition-all duration-300 ease-in-out overflow-hidden border-l border-gray-700 ${
-            isUserListCollapsed ? 'w-0' : 'w-64'
-          }`}>
-            {activeTab === 'servers' && selectedServer ? (
+          {/* Right sidebar - Server Members only */}
+          {activeTab === 'servers' && selectedServer && (
+            <div className={`h-[calc(100vh-140px)] bg-gray-800 transition-all duration-300 ease-in-out overflow-hidden border-l border-gray-700 ${
+              isUserListCollapsed ? 'w-0' : 'w-64'
+            }`}>
               <ServerMembers 
                 selectedServer={selectedServer}
                 onlineUsers={onlineUsers}
               />
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold">Users</h2>
-                </div>
-                <div className="space-y-4 overflow-y-auto max-h-[calc(100vh-160px)]">
-                  {/* Online Users */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-400 mb-2">Online — {onlineUsers.size}</h3>
-                    <div className="space-y-2">
-                      {Array.from(onlineUsers.values()).map(u => (
-                        <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700">
-                          {u.avatar_url ? (
-                            <img 
-                              src={resolveAvatarUrl(u.avatar_url)} 
-                              alt={u.username} 
-                              className="w-8 h-8 rounded-full"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-                              {u.username.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div>
-                            <div className="text-xs font-medium">{u.username}</div>
-                            <div className="flex items-center gap-1 text-xs">
-                              {renderUserStatus(u)}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+            </div>
+          )}
 
-                  {/* Offline Users */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-400 mb-2">Offline — {offlineUsers.size}</h3>
-                    <div className="space-y-2">
-                      {Array.from(offlineUsers.values()).map(u => (
-                        <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700/50">
-                          {u.avatar_url ? (
-                            <img 
-                              src={resolveAvatarUrl(u.avatar_url)} 
-                              alt={u.username} 
-                              className="w-8 h-8 rounded-full opacity-75"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-gray-600/75 flex items-center justify-center">
-                              {u.username.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div>
-                            <div className="text-sm font-medium text-gray-300">{u.username}</div>
-                            <div className="text-xs text-gray-400">Offline</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Toggle button */}
-          <button 
-            onClick={() => setIsUserListCollapsed(!isUserListCollapsed)}
-            className="fixed right-4 top-32 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-            title={isUserListCollapsed ? "Show Users" : "Hide Users"}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
-            </svg>
-          </button>
+          {/* Toggle button (only when showing server members) */}
+          {activeTab === 'servers' && selectedServer && (
+            <button 
+              onClick={() => setIsUserListCollapsed(!isUserListCollapsed)}
+              className="fixed right-4 top-32 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+              title={isUserListCollapsed ? "Show Users" : "Hide Users"}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </div>

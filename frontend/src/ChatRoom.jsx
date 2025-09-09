@@ -4,7 +4,7 @@ import { useVoiceChat } from './hooks/useVoiceChat';
 import { getSocket } from './socket';
 import { API_URL } from './api';
 import VideoPlayer from './components/VideoPlayer'; // Adjust the path as necessary
-import { resolveAvatarUrl } from './utils/mediaUrl';
+import { resolveAvatarUrl, resolveMediaUrl } from './utils/mediaUrl';
 
 export default function ChatRoom({ channelId, userId, type, username, avatar, serverId }) {
   const [messages, setMessages] = useState([]);
@@ -281,12 +281,13 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
 
   // Render message content based on type
   const renderMessageContent = (message) => {
+    const resolved = resolveMediaUrl(message.content);
     switch (message.type) {
       case 'image':
         return (
           <div className="max-w-[300px] max-h-[300px] overflow-hidden rounded">
             <img 
-              src={message.content} 
+              src={resolved} 
               alt="Chat image" 
               className="w-full h-auto object-contain"
               loading="lazy"
@@ -301,18 +302,18 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
       case 'video':
         return (
           <div className="max-w-[400px] rounded overflow-hidden bg-gray-700">
-            <VideoPlayer src={message.content} />
+            <VideoPlayer src={resolved} />
           </div>
         );
       case 'file':
-        const fileName = message.content.split('/').pop();
+        const fileName = (resolved || message.content).split('/').pop();
         return (
           <div className="flex items-center gap-2 p-2 bg-gray-700 rounded">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
             <a 
-              href={message.content}
+              href={resolved}
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-400 hover:underline truncate"

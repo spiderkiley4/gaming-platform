@@ -154,10 +154,19 @@ function getRunningGames() {
 }
 
 function createWindow() {
+    // Resolve icon path for dev vs packaged
+    const appRoot = path.join(__dirname, '..');
+    const iconCandidates = [
+        path.join(appRoot, 'assets', 'jemcord.png'),          // packaged assets
+        path.join(appRoot, 'frontend', 'jemcord.png'),        // copied frontend asset (rare)
+        path.join(__dirname, '../assets/jemcord.png'),        // relative dev fallback
+        path.join(__dirname, '../jemcord.png')                // fallback if copied beside dist
+    ];
+    const iconPath = iconCandidates.find(fs.existsSync);
     const mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
-        icon: path.join(__dirname, '../jemcord.png'),
+        icon: iconPath,
         autoHideMenuBar: true,
         webPreferences: {
             nodeIntegration: true,
@@ -198,7 +207,7 @@ function createWindow() {
                 title,
                 body,
                 silent: false,
-                icon: path.join(__dirname, '../assets/jemcord.png')
+                icon: iconPath
             });
 
             notification.on('click', () => {
