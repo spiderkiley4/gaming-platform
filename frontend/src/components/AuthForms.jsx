@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../api';
 
 export default function AuthForms() {
   const [isLogin, setIsLogin] = useState(true);
@@ -94,7 +95,7 @@ export default function AuthForms() {
           onClick={async () => {
             console.log('Testing API connection...');
             try {
-              const response = await fetch('http://localhost:3001/api/auth/login', {
+              const response = await fetch(`${API_URL}/api/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: 'testuser1', password: 'password123' })
@@ -139,7 +140,7 @@ export default function AuthForms() {
             console.log('Testing getCurrentUser API...');
             try {
               // First login to get a token
-              const loginResponse = await fetch('http://localhost:3001/api/auth/login', {
+              const loginResponse = await fetch(`${API_URL}/api/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: 'testuser1', password: 'password123' })
@@ -151,7 +152,7 @@ export default function AuthForms() {
               localStorage.setItem('token', loginData.token);
               
               // Now test getCurrentUser
-              const userResponse = await fetch('http://localhost:3001/api/users/me', {
+              const userResponse = await fetch(`${API_URL}/api/users/me`, {
                 method: 'GET',
                 headers: {
                   'Authorization': `Bearer ${loginData.token}`,

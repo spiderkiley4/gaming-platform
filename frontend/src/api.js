@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-export const API_URL = import.meta.env.VITE_API_URL;
+export const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? 'https://jemcord.mooo.com' : 'http://localhost:3001');
 
 // Create axios instance with auth header interceptor
 const api = axios.create({

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "prod": "VITE_API_URL=https://jemcord.mooo.com vite --host",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

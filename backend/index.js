@@ -532,6 +532,44 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Provide current voice channel members/counts for a server
+  socket.on('get_voice_channel_counts', async ({ serverId }) => {
+    try {
+      if (!serverId) {
+        socket.emit('voice_channel_counts', { serverId: null, counts: {}, members: {} });
+        return;
+      }
+
+      const channelResult = await db.query(
+        "SELECT id FROM server_channels WHERE server_id = $1 AND type = 'voice'",
+        [serverId]
+      );
+
+      const counts = {};
+      const members = {};
+
+      for (const row of channelResult.rows) {
+        const voiceRoom = `voice-${row.id}`;
+        const room = io.sockets.adapter.rooms.get(voiceRoom);
+        const socketsInRoom = room ? Array.from(room) : [];
+        counts[row.id] = socketsInRoom.length;
+        members[row.id] = socketsInRoom
+          .map((sid) => io.sockets.sockets.get(sid))
+          .filter((s) => !!s && !!s.user)
+          .map((s) => ({
+            userId: s.user.id,
+            username: s.user.username,
+            avatar_url: s.user.avatar_url
+          }));
+      }
+
+      socket.emit('voice_channel_counts', { serverId, counts, members });
+    } catch (error) {
+      console.error('Error getting voice channel counts:', error);
+      socket.emit('voice_channel_counts', { serverId, counts: {}, members: {} });
+    }
+  });
+
   socket.on('join_channel', (channelId) => {
     socket.join(`channel-${channelId}`);
   });
@@ -652,6 +690,19 @@ io.on('connection', (socket) => {
       username: socket.user.username,
       avatar_url: socket.user.avatar_url
     });
+
+    // Broadcast updated count and members for this channel
+    try {
+      const roomAfterJoin = io.sockets.adapter.rooms.get(voiceRoom);
+      const socketsInRoom = roomAfterJoin ? Array.from(roomAfterJoin) : [];
+      const users = socketsInRoom
+        .map((sid) => io.sockets.sockets.get(sid))
+        .filter((s) => !!s && !!s.user)
+        .map((s) => ({ userId: s.user.id, username: s.user.username, avatar_url: s.user.avatar_url }));
+      io.emit('voice_channel_count', { channelId, count: socketsInRoom.length, users });
+    } catch (err) {
+      console.error('Error broadcasting voice join count:', err);
+    }
   });
 
   socket.on('voice_leave', ({ channelId }) => {
@@ -664,6 +715,19 @@ io.on('connection', (socket) => {
       userId: socket.user.id,
       username: socket.user.username
     });
+
+    // Broadcast updated count and members for this channel
+    try {
+      const roomAfterLeave = io.sockets.adapter.rooms.get(voiceRoom);
+      const socketsInRoom = roomAfterLeave ? Array.from(roomAfterLeave) : [];
+      const users = socketsInRoom
+        .map((sid) => io.sockets.sockets.get(sid))
+        .filter((s) => !!s && !!s.user)
+        .map((s) => ({ userId: s.user.id, username: s.user.username, avatar_url: s.user.avatar_url }));
+      io.emit('voice_channel_count', { channelId, count: socketsInRoom.length, users });
+    } catch (err) {
+      console.error('Error broadcasting voice leave count:', err);
+    }
   });
 
   socket.on('voice_offer', ({ offer, to }) => {
@@ -712,6 +776,20 @@ io.on('connection', (socket) => {
           userId: socket.user.id,
           username: socket.user.username
         });
+
+        // Broadcast updated count and members for this channel on disconnect
+        try {
+          const channelId = parseInt(room.replace('voice-', ''));
+          const roomAfter = io.sockets.adapter.rooms.get(room);
+          const socketsInRoom = roomAfter ? Array.from(roomAfter) : [];
+          const users = socketsInRoom
+            .map((sid) => io.sockets.sockets.get(sid))
+            .filter((s) => !!s && !!s.user)
+            .map((s) => ({ userId: s.user.id, username: s.user.username, avatar_url: s.user.avatar_url }));
+          io.emit('voice_channel_count', { channelId, count: socketsInRoom.length, users });
+        } catch (err) {
+          console.error('Error broadcasting voice disconnect count:', err);
+        }
       }
     });
   });

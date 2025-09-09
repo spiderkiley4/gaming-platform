@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getServerChannels, createServerChannel } from '../api/index';
+import { getSocket } from '../socket';
 
 export default function ServerChannels({ 
   selectedServer, 
@@ -13,11 +14,48 @@ export default function ServerChannels({
   const [newChannelName, setNewChannelName] = useState('');
   const [newChannelType, setNewChannelType] = useState('text');
   const [isLoading, setIsLoading] = useState(false);
+  const [voiceActivity, setVoiceActivity] = useState({}); // { [channelId]: { count, users: [{ userId, username, avatar_url }] } }
 
   useEffect(() => {
     if (selectedServer) {
       fetchChannels();
     }
+  }, [selectedServer]);
+
+  // Subscribe to voice activity events
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !selectedServer) return;
+
+    const handleCounts = ({ serverId, counts, members }) => {
+      if (!serverId || serverId !== selectedServer.id) return;
+      const next = {};
+      Object.keys(counts || {}).forEach((channelId) => {
+        next[channelId] = {
+          count: counts[channelId] || 0,
+          users: (members && members[channelId]) || []
+        };
+      });
+      setVoiceActivity(next);
+    };
+
+    const handleCount = ({ channelId, count, users }) => {
+      setVoiceActivity(prev => ({
+        ...prev,
+        [channelId]: { count: count || 0, users: users || [] }
+      }));
+    };
+
+    socket.on('voice_channel_counts', handleCounts);
+    socket.on('voice_channel_count', handleCount);
+
+    // Request initial counts when channels are loaded
+    socket.emit('get_voice_channel_counts', { serverId: selectedServer.id });
+
+    return () => {
+      socket.off('voice_channel_counts', handleCounts);
+      socket.off('voice_channel_count', handleCount);
+    };
   }, [selectedServer]);
 
   const fetchChannels = async () => {
@@ -31,6 +69,11 @@ export default function ServerChannels({
       
       setTextChannels(textResponse.data);
       setVoiceChannels(voiceResponse.data);
+      // After channels load, request fresh voice counts
+      const socket = getSocket();
+      if (socket) {
+        socket.emit('get_voice_channel_counts', { serverId: selectedServer.id });
+      }
     } catch (error) {
       console.error('Error fetching server channels:', error);
     }
@@ -139,19 +182,52 @@ export default function ServerChannels({
               </h3>
             </div>
             <ul className="space-y-1">
-              {voiceChannels.map((channel) => (
-                <li
-                  key={channel.id}
-                  className={`px-2 py-1 rounded cursor-pointer text-sm transition-colors ${
-                    selectedChannel?.id === channel.id
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  }`}
-                  onClick={() => onChannelSelect({ ...channel, type: 'voice' })}
-                >
-                  🔊 {channel.name}
-                </li>
-              ))}
+              {voiceChannels.map((channel) => {
+                const activity = voiceActivity[channel.id] || { count: 0, users: [] };
+                const users = activity.users || [];
+                return (
+                  <li
+                    key={channel.id}
+                    className={`px-2 py-1 rounded cursor-pointer text-sm transition-colors ${
+                      selectedChannel?.id === channel.id
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                    onClick={() => onChannelSelect({ ...channel, type: 'voice' })}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="truncate">
+                        🔊 {channel.name}
+                      </div>
+                      {activity.count > 0 && (
+                        <div className="ml-2 flex items-center gap-1 text-xs text-gray-300">
+                          <span className="px-1.5 py-0.5 rounded bg-gray-700">
+                            {activity.count}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {users.length > 0 && (
+                      <div className="mt-1 flex -space-x-2">
+                        {users.slice(0, 5).map((u) => (
+                          <div key={u.userId} className="w-5 h-5 rounded-full ring-2 ring-gray-800 bg-gray-600 text-[10px] flex items-center justify-center overflow-hidden">
+                            {u.avatar_url ? (
+                              <img src={u.avatar_url} alt={u.username} className="w-full h-full object-cover" />
+                            ) : (
+                              <span>{u.username?.charAt(0)?.toUpperCase()}</span>
+                            )}
+                          </div>
+                        ))}
+                        {users.length > 5 && (
+                          <div className="w-5 h-5 rounded-full ring-2 ring-gray-800 bg-gray-700 text-[10px] flex items-center justify-center">
+                            +{users.length - 5}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

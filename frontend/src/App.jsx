@@ -704,7 +704,7 @@ export default function App() {
           </div>
 
           {/* Main content - Chat */}
-          <div className={`flex-1 h-[calc(100vh-140px)] transition-all duration-300 ${isUserListCollapsed ? 'mr-0' : 'mr-64'} bg-gray-900`}>
+          <div className={`flex-1 h-[calc(100vh-140px)] transition-all duration-300 bg-gray-900 mx-2`}>
             {selectedChannel && (
               <ChatRoom 
                 channelId={selectedChannel.id} 
@@ -727,8 +727,8 @@ export default function App() {
           </div>
 
           {/* Right sidebar - Users List or Server Members */}
-          <div className={`fixed right-0 top-28 w-64 h-[calc(100vh-140px)] bg-gray-800 transform transition-transform duration-300 ease-in-out ${
-            isUserListCollapsed ? 'translate-x-full' : 'translate-x-0'
+          <div className={`h-[calc(100vh-140px)] bg-gray-800 transition-all duration-300 ease-in-out overflow-hidden border-l border-gray-700 ${
+            isUserListCollapsed ? 'w-0' : 'w-64'
           }`}>
             {activeTab === 'servers' && selectedServer ? (
               <ServerMembers 

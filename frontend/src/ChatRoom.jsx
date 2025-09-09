@@ -401,28 +401,33 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
             </div>
 
             {/* Other participants */}
-            {Array.from(peers.entries()).map(([peerId, peer]) => (
-              <div key={peerId} className="flex items-center gap-3 p-2 bg-gray-600 rounded">
-                <div className="relative">
-                  {peer.avatar ? (
-                    <img 
-                      src={peer.avatar} 
-                      alt={peer.username || 'User'} 
-                      className="w-10 h-10 rounded-full"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
-                      {(peer.username || 'U').charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 border-2 border-gray-700"></div>
+            {Array.from(peers.entries()).map(([peerId, peer]) => {
+              const fallbackUser = users.find(u => u.userId === peer.userId);
+              const displayUsername = peer.username || fallbackUser?.username || `User ${peerId.slice(0, 4)}`;
+              const displayAvatar = peer.avatar_url || fallbackUser?.avatar_url || null;
+              return (
+                <div key={peerId} className="flex items-center gap-3 p-2 bg-gray-600 rounded">
+                  <div className="relative">
+                    {displayAvatar ? (
+                      <img 
+                        src={displayAvatar} 
+                        alt={displayUsername} 
+                        className="w-10 h-10 rounded-full"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
+                        {displayUsername.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 border-2 border-gray-700"></div>
+                  </div>
+                  <div>
+                    <div className="font-medium">{displayUsername}</div>
+                    <div className="text-sm text-gray-400">Speaking</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-medium">{peer.username || `User ${peerId.slice(0, 4)}`}</div>
-                  <div className="text-sm text-gray-400">Speaking</div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             {isConnected && peers.size === 0 && (
               <div className="text-center text-gray-400 py-4">

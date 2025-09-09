@@ -1,7 +1,9 @@
 import axios from 'axios';
 
 // Determine the API URL based on the environment
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+type ViteEnv = { VITE_API_URL?: string; PROD?: boolean };
+const env = (import.meta as unknown as { env?: ViteEnv }).env ?? {};
+const API_URL = env.VITE_API_URL || (env.PROD ? 'https://jemcord.mooo.com' : 'http://localhost:3001');
 
 const api = axios.create({
   baseURL: API_URL,
