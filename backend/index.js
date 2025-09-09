@@ -469,8 +469,16 @@ io.use((socket, next) => {
   });
 });
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   console.log('User connected:', socket.user.username, socket.id);
+  // Ensure avatar_url is present on the socket user from DB
+  try {
+    const userRes = await db.query('SELECT avatar_url FROM users WHERE id = $1', [socket.user.id]);
+    socket.user.avatar_url = userRes.rows[0]?.avatar_url || null;
+  } catch (err) {
+    console.error('Error fetching user avatar_url:', err);
+    socket.user.avatar_url = null;
+  }
   
   // Add user to tracking with initial presence
   userStatus.set(socket.user.id, {
