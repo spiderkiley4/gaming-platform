@@ -7,6 +7,7 @@ const { exec } = require('child_process');
 import type { ExecException } from 'child_process';
 
 const isDev = process.env.NODE_ENV === 'development';
+const isPackagedApp = app.isPackaged;
 const appVersion = app.getVersion();
 const API_URL = isDev ? 'https://localhost:3001' : 'https://jemcord.mooo.com';
 
@@ -91,7 +92,7 @@ X-GNOME-UsesNotifications=true`;
 }
 
 // Set update server URL if needed
-if (!isDev) {
+if (isPackagedApp) {
     autoUpdater.setFeedURL({
         provider: 'github',
         owner: 'spiderkiley4',
@@ -288,8 +289,8 @@ app.whenReady().then(() => {
         } catch (e) {
             console.error('Error installing devtools:', e);
         }
-    } else {
-        // Check for updates when the app starts
+    } else if (isPackagedApp) {
+        // Check for updates when the app starts (only when packaged)
         autoUpdater.checkForUpdates();
     }
 
