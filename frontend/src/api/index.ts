@@ -119,3 +119,12 @@ export const getChannelMessages = (channelId: number) => {
 };
 
 export { API_URL };
+
+// Invites
+export const createServerInvite = (serverId: number, options?: { max_uses?: number; expires_in?: number }) => {
+  return api.post(`/api/servers/${serverId}/invites`, options || {});
+};
+
+export const joinServerByInvite = (code: string) => {
+  return api.post(`/api/invites/${code}/join`);
+};

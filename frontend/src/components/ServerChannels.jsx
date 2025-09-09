@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getServerChannels, createServerChannel } from '../api/index';
+import { getServerChannels, createServerChannel, createServerInvite } from '../api/index';
 import { getSocket } from '../socket';
 import { resolveAvatarUrl } from '../utils/mediaUrl';
 
@@ -16,6 +16,9 @@ export default function ServerChannels({
   const [newChannelType, setNewChannelType] = useState('text');
   const [isLoading, setIsLoading] = useState(false);
   const [voiceActivity, setVoiceActivity] = useState({}); // { [channelId]: { count, users: [{ userId, username, avatar_url }] } }
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invite, setInvite] = useState(null);
+  const [inviteOptions, setInviteOptions] = useState({ max_uses: '', expires_in: '' });
 
   useEffect(() => {
     if (selectedServer) {
@@ -143,6 +146,13 @@ export default function ServerChannels({
               <div className="text-sm text-gray-400 truncate">{selectedServer.description}</div>
             )}
           </div>
+          <button
+            onClick={() => setShowInviteModal(true)}
+            className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-200 rounded"
+            title="Create Invite"
+          >
+            Invite
+          </button>
         </div>
       </div>
 
@@ -299,6 +309,73 @@ export default function ServerChannels({
                 className="flex-1 p-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? 'Creating...' : 'Create Channel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Invite Modal */}
+      {showInviteModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800/70 backdrop-blur-md p-6 rounded-lg w-96 border border-gray-700">
+            <h3 className="text-xl font-semibold text-white mb-4">Create Invite</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm">Max Uses (optional)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={inviteOptions.max_uses}
+                    onChange={(e) => setInviteOptions(o => ({ ...o, max_uses: e.target.value }))}
+                    className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white"
+                    placeholder="e.g. 5"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-2 text-sm">Expires In (sec)</label>
+                  <input
+                    type="number"
+                    min="60"
+                    step="60"
+                    value={inviteOptions.expires_in}
+                    onChange={(e) => setInviteOptions(o => ({ ...o, expires_in: e.target.value }))}
+                    className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white"
+                    placeholder="e.g. 86400"
+                  />
+                </div>
+              </div>
+              {invite && (
+                <div className="p-2 bg-gray-700 rounded text-gray-200 text-sm break-all">
+                  <div className="mb-1">Invite Code:</div>
+                  <div className="font-mono text-lg">{invite.code}</div>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => { setShowInviteModal(false); setInvite(null); }}
+                className="flex-1 p-3 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await createServerInvite(selectedServer.id, {
+                      max_uses: inviteOptions.max_uses ? parseInt(inviteOptions.max_uses) : undefined,
+                      expires_in: inviteOptions.expires_in ? parseInt(inviteOptions.expires_in) : undefined
+                    });
+                    setInvite(res.data);
+                  } catch (err) {
+                    alert('Failed to create invite');
+                    console.error(err);
+                  }
+                }}
+                className="flex-1 p-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+              >
+                Generate
               </button>
             </div>
           </div>

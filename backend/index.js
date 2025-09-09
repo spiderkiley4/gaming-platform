@@ -906,6 +906,76 @@ app.post('/api/servers', authenticateToken, async (req, res) => {
   }
 });
 
+// Create invite endpoint
+app.post('/api/servers/:id/invites', authenticateToken, async (req, res) => {
+  try {
+    const serverId = parseInt(req.params.id);
+    const { max_uses, expires_in } = req.body || {}; // expires_in in seconds
+
+    // Only owner can create invites for now
+    const serverCheck = await db.query('SELECT owner_id FROM servers WHERE id = $1', [serverId]);
+    if (serverCheck.rows.length === 0) return res.status(404).json({ error: 'Server not found' });
+    if (serverCheck.rows[0].owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const generateCode = (len = 8) => Array.from({ length: len }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+    let code = generateCode();
+    // Ensure uniqueness (simple retry loop)
+    for (let i = 0; i < 5; i++) {
+      const exists = await db.query('SELECT 1 FROM server_invites WHERE code = $1', [code]);
+      if (exists.rows.length === 0) break;
+      code = generateCode();
+    }
+
+    const expiresAt = expires_in ? new Date(Date.now() + (parseInt(expires_in) * 1000)) : null;
+    const result = await db.query(
+      'INSERT INTO server_invites (server_id, code, max_uses, expires_at, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [serverId, code, max_uses ?? null, expiresAt, req.user.id]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating invite:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Join via invite code
+app.post('/api/invites/:code/join', authenticateToken, async (req, res) => {
+  try {
+    const code = req.params.code.toUpperCase();
+    const inviteRes = await db.query('SELECT * FROM server_invites WHERE code = $1', [code]);
+    if (inviteRes.rows.length === 0) return res.status(404).json({ error: 'Invite not found' });
+    const invite = inviteRes.rows[0];
+
+    // Validate expiration and uses
+    if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+      return res.status(410).json({ error: 'Invite expired' });
+    }
+    if (invite.max_uses && invite.uses >= invite.max_uses) {
+      return res.status(409).json({ error: 'Invite exhausted' });
+    }
+
+    // Add user as member if not already
+    const exists = await db.query(
+      'SELECT 1 FROM server_members WHERE server_id = $1 AND user_id = $2',
+      [invite.server_id, req.user.id]
+    );
+    if (exists.rows.length === 0) {
+      await db.query('INSERT INTO server_members (server_id, user_id) VALUES ($1, $2)', [invite.server_id, req.user.id]);
+    }
+
+    // Increment uses
+    await db.query('UPDATE server_invites SET uses = uses + 1 WHERE id = $1', [invite.id]);
+
+    // Return the server info
+    const server = await db.query('SELECT * FROM servers WHERE id = $1', [invite.server_id]);
+    res.json(server.rows[0]);
+  } catch (error) {
+    console.error('Error joining via invite:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 app.get('/api/servers/:id', authenticateToken, async (req, res) => {
   try {
     const serverId = req.params.id;

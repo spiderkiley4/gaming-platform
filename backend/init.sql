@@ -95,3 +95,17 @@ CREATE INDEX IF NOT EXISTS idx_server_channels_server_id ON server_channels(serv
 CREATE INDEX IF NOT EXISTS idx_server_roles_server_id ON server_roles(server_id);
 CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id);
 CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);
+
+-- Server invites
+CREATE TABLE IF NOT EXISTS server_invites (
+    id SERIAL PRIMARY KEY,
+    server_id INTEGER REFERENCES servers(id) ON DELETE CASCADE,
+    code VARCHAR(16) NOT NULL UNIQUE,
+    max_uses INTEGER,
+    uses INTEGER DEFAULT 0,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_server_invites_server_id ON server_invites(server_id);
