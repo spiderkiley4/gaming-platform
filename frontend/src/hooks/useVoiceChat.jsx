@@ -9,6 +9,7 @@ export function useVoiceChat(channelId, socket) {
   const audioElementsRef = useRef(new Map());
   const pendingAnswersRef = useRef(new Map());
   const pendingIceCandidatesRef = useRef(new Map());
+  const volumesRef = useRef(new Map()); // remoteUserId -> volume (0.0 - 1.0)
 
   const waitForSignalingState = async (peerConnection, expectedState, timeout = 5000) => {
     if (peerConnection.signalingState === expectedState) {
@@ -159,7 +160,8 @@ export function useVoiceChat(channelId, socket) {
             stream,
             username: existingPeer?.username || `User ${remoteUserId.slice(0, 4)}`,
             avatar_url: existingPeer?.avatar_url,
-            userId: existingPeer?.userId
+            userId: existingPeer?.userId,
+            volume: existingPeer?.volume ?? (volumesRef.current.get(remoteUserId) ?? 1)
           });
           return newPeers;
         });
@@ -174,6 +176,9 @@ export function useVoiceChat(channelId, socket) {
           audioElementsRef.current.set(remoteUserId, audioElement);
         }
         audioElement.srcObject = stream;
+        // Apply saved volume or default to 1
+        const vol = volumesRef.current.get(remoteUserId);
+        audioElement.volume = typeof vol === 'number' ? vol : 1;
         
         // Play with error handling
         const playPromise = audioElement.play();
@@ -481,6 +486,8 @@ export function useVoiceChat(channelId, socket) {
         audioElement.remove();
         audioElementsRef.current.delete(socketId);
       }
+      // Remove volume tracking
+      volumesRef.current.delete(socketId);
       
       setPeers((prevPeers) => {
         const newPeers = new Map(prevPeers);
@@ -521,5 +528,23 @@ export function useVoiceChat(channelId, socket) {
     startVoiceChat,
     toggleMute,
     disconnect,
+    setPeerVolume: (remoteUserId, volume) => {
+      try {
+        const clamped = Math.max(0, Math.min(1, Number(volume)));
+        volumesRef.current.set(remoteUserId, clamped);
+        const audio = audioElementsRef.current.get(remoteUserId);
+        if (audio) {
+          audio.volume = clamped;
+        }
+        setPeers((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(remoteUserId) || {};
+          next.set(remoteUserId, { ...existing, volume: clamped });
+          return next;
+        });
+      } catch (e) {
+        console.error('Error setting peer volume:', e);
+      }
+    }
   };
 }

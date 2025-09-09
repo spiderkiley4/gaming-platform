@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getServerMembers } from '../api/index';
+import { resolveAvatarUrl } from '../utils/mediaUrl';
 
 export default function ServerMembers({ selectedServer, onlineUsers }) {
   const [members, setMembers] = useState([]);
@@ -120,7 +121,7 @@ export default function ServerMembers({ selectedServer, onlineUsers }) {
                 <div key={member.id} className="flex items-center gap-2 p-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors duration-200">
                   {member.avatar_url ? (
                     <img 
-                      src={member.avatar_url} 
+                      src={resolveAvatarUrl(member.avatar_url)} 
                       alt={member.username} 
                       className="w-8 h-8 rounded-full"
                     />
@@ -166,7 +167,7 @@ export default function ServerMembers({ selectedServer, onlineUsers }) {
                 <div key={member.id} className="flex items-center gap-2 p-2 rounded bg-gray-700/50 hover:bg-gray-600/50 transition-colors duration-200">
                   {member.avatar_url ? (
                     <img 
-                      src={member.avatar_url} 
+                      src={resolveAvatarUrl(member.avatar_url)} 
                       alt={member.username} 
                       className="w-8 h-8 rounded-full opacity-75"
                     />

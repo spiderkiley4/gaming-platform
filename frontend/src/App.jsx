@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
-import { getChannels, createChannel, API_URL } from './api/index';
+import { API_URL } from './api/index';
 import ChatRoom from './ChatRoom';
 import { initSocket, getSocket } from './socket';
 import AuthForms from './components/AuthForms';
 import { useAuth } from './context/AuthContext';
 import VersionDisplay from './components/VersionDisplay';
-import { useVoiceChat } from './hooks/useVoiceChat';
 import { useSpotifyPresence } from './hooks/useSpotifyPresence';
 import ServerList from './components/ServerList';
 import ServerChannels from './components/ServerChannels';
 import ServerMembers from './components/ServerMembers';
+import { resolveAvatarUrl } from './utils/mediaUrl';
 
 export default function App() {
   const { user, logout, setUser } = useAuth();
@@ -21,13 +21,10 @@ export default function App() {
     console.log('[App] App component re-rendered with user:', user);
   }, [user]);
   
-  const [textChannels, setTextChannels] = useState([]);
-  const [voiceChannels, setVoiceChannels] = useState([]);
+  
   const [selectedChannel, setSelectedChannel] = useState(null);
   const [selectedServer, setSelectedServer] = useState(null);
-  const [newChannelName, setNewChannelName] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [newChannelType, setNewChannelType] = useState('text');
+  
   const [isConnected, setIsConnected] = useState(false);
   const [activeTab, setActiveTab] = useState('servers');
   const [onlineUsers, setOnlineUsers] = useState(new Map());
@@ -42,7 +39,6 @@ export default function App() {
   const [customStatus, setCustomStatus] = useState('');
   
   const socket = getSocket();
-  const { peers, isMuted, isConnected: isVoiceConnected } = useVoiceChat(selectedChannel?.id || 0, socket);
 
   // Add presence update function
   const updatePresence = (presence) => {
@@ -98,19 +94,6 @@ export default function App() {
     const checkInterval = setInterval(detectGameProcess, 30000); // Check every 30 seconds
     return () => clearInterval(checkInterval);
   }, []);
-
-  // Fetch channels on initial load
-  useEffect(() => {
-    if (user) {
-      Promise.all([
-        getChannels('text'),
-        getChannels('voice')
-      ]).then(([textRes, voiceRes]) => {
-        setTextChannels(textRes.data);
-        setVoiceChannels(voiceRes.data);
-      });
-    }
-  }, [user]);
 
   // Set up WebSocket connections
   useEffect(() => {
@@ -202,14 +185,6 @@ export default function App() {
           });
         }
       });
-
-      socket.on('new_channel', (channel) => {
-        if (channel.type === 'text') {
-          setTextChannels(prev => [...prev, channel]);
-        } else if (channel.type === 'voice') {
-          setVoiceChannels(prev => [...prev, channel]);
-        }
-      });
     };
 
     socket.on('connect', () => {
@@ -233,7 +208,6 @@ export default function App() {
       socket.off('disconnect');
       socket.off('online_users');
       socket.off('user_status');
-      socket.off('new_channel');
       socket.off('new_message');
     };
   }, [user, selectedChannel]);
@@ -246,20 +220,11 @@ export default function App() {
         setIsMinimized(isMinimized);
       });
 
-      // Handle channel switch requests from notification clicks
-      window.electron.on('switch-channel', (channelId) => {
-        const channel = [...textChannels, ...voiceChannels].find(ch => ch.id === channelId);
-        if (channel) {
-          setSelectedChannel({ ...channel, type: channel.type });
-        }
-      });
-
       return () => {
         window.electron.removeAllListeners('window-state-change');
-        window.electron.removeAllListeners('switch-channel');
       };
     }
-  }, [textChannels, voiceChannels]);
+  }, []);
 
   // Function to handle new message and update unread counts
   const handleNewMessage = (message) => {
@@ -299,17 +264,6 @@ export default function App() {
     }
   };
 
-  const handleCreateChannel = async () => {
-    if (!newChannelName.trim()) return;
-    try {
-      await createChannel(newChannelName.trim(), newChannelType);
-      setNewChannelName('');
-      setShowForm(false);
-    } catch (err) {
-      console.error('Error creating channel', err);
-    }
-  };
-
   if (!user) {
     console.log('[App] No user, rendering AuthForms');
     return <AuthForms />;
@@ -322,8 +276,8 @@ export default function App() {
     if (!showProfileSettings) return null;
     
     return (
-      <div className="fixed inset-0 bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-gray-800 p-6 rounded-lg w-96">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="bg-gray-800/70 backdrop-blur-md p-6 rounded-lg w-96 border border-gray-700">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">Profile Settings</h2>
             <button 
@@ -341,7 +295,7 @@ export default function App() {
                 <label className="cursor-pointer block">
                   {user.avatar_url ? (
                     <img 
-                      src={user.avatar_url} 
+                      src={resolveAvatarUrl(user.avatar_url)} 
                       alt={user.username} 
                       className="w-20 h-20 rounded-full group-hover:opacity-80 transition-opacity"
                     />
@@ -474,7 +428,7 @@ export default function App() {
           <div className="relative">
             {user.avatar_url ? (
               <img 
-                src={user.avatar_url} 
+                src={resolveAvatarUrl(user.avatar_url)} 
                 alt={user.username} 
                 className="w-8 h-8 rounded-full group-hover:opacity-80 transition-opacity"
               />
@@ -582,125 +536,6 @@ export default function App() {
                 }}
               />
             )}
-
-            {/* Legacy Channels (for friends tab) */}
-            {activeTab === 'friends' && (
-              <div className="w-64 flex-shrink-0 h-[calc(100vh-140px)]">
-                {/* Text Channels */}
-                <div className="mb-6">
-                  <h2 className="text-xl font-semibold mb-2">Text Channels</h2>
-                  <ul className="space-y-2">
-                    {textChannels.map((ch) => (
-                      <li
-                        key={ch.id}
-                        className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
-                          selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
-                        } relative flex items-center justify-between`}
-                        onClick={() => {
-                          setSelectedChannel({ ...ch, type: 'text' });
-                          // Clear unread and mentions when selecting channel
-                          setUnreadMessages(prev => {
-                            const newMap = new Map(prev);
-                            newMap.delete(ch.id);
-                            return newMap;
-                          });
-                          setMentions(prev => {
-                            const newMap = new Map(prev);
-                            newMap.delete(ch.id);
-                            return newMap;
-                          });
-                        }}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span># {ch.name}</span>
-                          {mentions.get(ch.id) > 0 && (
-                            <span className="px-1.5 py-0.5 bg-red-500 text-xs rounded-full">
-                              @{mentions.get(ch.id)}
-                            </span>
-                          )}
-                          {!mentions.get(ch.id) && unreadMessages.get(ch.id) > 0 && (
-                            <span className="px-1.5 py-0.5 bg-blue-500 text-xs rounded-full">
-                              {unreadMessages.get(ch.id)}
-                            </span>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Voice Channels */}
-                <div className="mb-6">
-                  <h2 className="text-xl font-semibold mb-2">Voice Channels</h2>
-                  <ul className="space-y-2">
-                    {voiceChannels.map((ch) => (
-                      <li
-                        key={ch.id}
-                        className={`cursor-pointer p-2 rounded hover:bg-gray-600 ${
-                          selectedChannel?.id === ch.id ? 'bg-gray-600' : 'bg-gray-700'
-                        }`}
-                      >
-                        <div onClick={() => setSelectedChannel({ ...ch, type: 'voice' })}>
-                          🔊 {ch.name}
-                        </div>
-                        {selectedChannel?.id === ch.id && selectedChannel?.type === 'voice' && (
-                          <div className="mt-2 pl-4 text-sm text-gray-400">
-                            {/* Show current user if connected */}
-                            {isVoiceConnected && (
-                              <div className="flex items-center gap-2 py-1">
-                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                {user.username} (You){isMuted && ' [Muted]'}
-                              </div>
-                            )}
-                            {/* Show other participants */}
-                            {Array.from(peers.values()).map((peer, index) => (
-                              <div key={peer.userId} className="flex items-center gap-2 py-1">
-                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                                {peer.username}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                {/* Channel Creation */}
-                <button
-                  className="mt-4 p-2 bg-blue-500 rounded text-white hover:bg-blue-600 w-full"
-                  onClick={() => setShowForm(!showForm)}
-                >
-                  {showForm ? 'Cancel' : 'Create Channel'}
-                </button>
-
-                {showForm && (
-                  <div className="mt-4 space-y-2">
-                    <input
-                      type="text"
-                      className="p-2 bg-gray-700 rounded w-full"
-                      placeholder="Enter channel name"
-                      value={newChannelName}
-                      onChange={(e) => setNewChannelName(e.target.value)}
-                    />
-                    <select
-                      className="p-2 bg-gray-700 rounded w-full"
-                      value={newChannelType}
-                      onChange={(e) => setNewChannelType(e.target.value)}
-                    >
-                      <option value="text">Text Channel</option>
-                      <option value="voice">Voice Channel</option>
-                    </select>
-                    <button
-                      onClick={handleCreateChannel}
-                      className="p-2 bg-green-500 rounded text-white hover:bg-green-600 w-full"
-                    >
-                      Create Channel
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Main content - Chat */}
@@ -749,7 +584,7 @@ export default function App() {
                         <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700">
                           {u.avatar_url ? (
                             <img 
-                              src={u.avatar_url} 
+                              src={resolveAvatarUrl(u.avatar_url)} 
                               alt={u.username} 
                               className="w-8 h-8 rounded-full"
                             />
@@ -777,7 +612,7 @@ export default function App() {
                         <div key={u.userId} className="flex items-center gap-2 p-2 rounded bg-gray-700/50">
                           {u.avatar_url ? (
                             <img 
-                              src={u.avatar_url} 
+                              src={resolveAvatarUrl(u.avatar_url)} 
                               alt={u.username} 
                               className="w-8 h-8 rounded-full opacity-75"
                             />
@@ -811,8 +646,6 @@ export default function App() {
           </button>
         </div>
       </div>
-      
-      <VersionDisplay />
     </div>
   );
 }

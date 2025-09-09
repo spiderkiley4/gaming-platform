@@ -4,6 +4,7 @@ import { useVoiceChat } from './hooks/useVoiceChat';
 import { getSocket } from './socket';
 import { API_URL } from './api';
 import VideoPlayer from './components/VideoPlayer'; // Adjust the path as necessary
+import { resolveAvatarUrl } from './utils/mediaUrl';
 
 export default function ChatRoom({ channelId, userId, type, username, avatar, serverId }) {
   const [messages, setMessages] = useState([]);
@@ -19,7 +20,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
   const socket = getSocket();
-  const { isMuted, isConnected, peers, startVoiceChat, toggleMute, disconnect } = useVoiceChat(channelId, socket);
+  const { isMuted, isConnected, peers, startVoiceChat, toggleMute, disconnect, setPeerVolume } = useVoiceChat(channelId, socket);
 
   // Get all online users for mention suggestions
   const [users, setUsers] = useState([]);
@@ -336,7 +337,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
           <div className="flex items-center gap-2">
             {avatar ? (
               <img 
-                src={avatar} 
+                src={resolveAvatarUrl(avatar)} 
                 alt={username} 
                 className="w-8 h-8 rounded-full"
               />
@@ -377,7 +378,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
               <div className="relative">
                 {avatar ? (
                   <img 
-                    src={avatar} 
+                    src={resolveAvatarUrl(avatar)} 
                     alt={username} 
                     className="w-10 h-10 rounded-full"
                   />
@@ -410,7 +411,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                   <div className="relative">
                     {displayAvatar ? (
                       <img 
-                        src={displayAvatar} 
+                        src={resolveAvatarUrl(displayAvatar)} 
                         alt={displayUsername} 
                         className="w-10 h-10 rounded-full"
                       />
@@ -421,9 +422,20 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                     )}
                     <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-green-500 border-2 border-gray-700"></div>
                   </div>
-                  <div>
-                    <div className="font-medium">{displayUsername}</div>
-                    <div className="text-sm text-gray-400">Speaking</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{displayUsername}</div>
+                    <div className="text-xs text-gray-300 mt-1 flex items-center gap-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={typeof peer.volume === 'number' ? peer.volume : 1}
+                        onChange={(e) => setPeerVolume(peerId, parseFloat(e.target.value))}
+                        className="w-40 accent-blue-500"
+                      />
+                      <span className="w-10 text-right">{Math.round((peer.volume ?? 1) * 100)}%</span>
+                    </div>
                   </div>
                 </div>
               );
@@ -499,7 +511,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
               <div className={`p-2 mb-2 mr-4 rounded w-full hover:bg-gray-700/60 flex items-start gap-3`}>
                 {message.avatar_url ? (
                   <img 
-                    src={message.avatar_url} 
+                    src={resolveAvatarUrl(message.avatar_url)} 
                     alt={message.username} 
                     className="w-12 h-12 rounded-full flex-shrink-0"
                   />
@@ -549,7 +561,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                   onClick={() => handleMentionSelect(user.username)}
                 >
                   {user.avatar_url ? (
-                    <img src={user.avatar_url} alt="" className="w-6 h-6 rounded-full" />
+                    <img src={resolveAvatarUrl(user.avatar_url)} alt="" className="w-6 h-6 rounded-full" />
                   ) : (
                     <div className="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-sm">
                       {user.username.charAt(0).toUpperCase()}

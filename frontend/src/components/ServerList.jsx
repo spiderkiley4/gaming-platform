@@ -112,8 +112,8 @@ export default function ServerList({ selectedServer, onServerSelect, onServerCre
 
       {/* Create Server Modal */}
       {showCreateForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-6 rounded-lg w-96">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800/70 backdrop-blur-md p-6 rounded-lg w-96 border border-gray-700">
             <h3 className="text-xl font-semibold text-white mb-4">Create Server</h3>
             
             <div className="space-y-4">

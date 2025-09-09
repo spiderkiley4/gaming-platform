@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getServerChannels, createServerChannel } from '../api/index';
 import { getSocket } from '../socket';
+import { resolveAvatarUrl } from '../utils/mediaUrl';
 
 export default function ServerChannels({ 
   selectedServer, 
@@ -212,7 +213,7 @@ export default function ServerChannels({
                         {users.slice(0, 5).map((u) => (
                           <div key={u.userId} className="w-5 h-5 rounded-full ring-2 ring-gray-800 bg-gray-600 text-[10px] flex items-center justify-center overflow-hidden">
                             {u.avatar_url ? (
-                              <img src={u.avatar_url} alt={u.username} className="w-full h-full object-cover" />
+                              <img src={resolveAvatarUrl(u.avatar_url)} alt={u.username} className="w-full h-full object-cover" />
                             ) : (
                               <span>{u.username?.charAt(0)?.toUpperCase()}</span>
                             )}
@@ -254,8 +255,8 @@ export default function ServerChannels({
 
       {/* Create Channel Modal */}
       {showCreateForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-6 rounded-lg w-96">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800/70 backdrop-blur-md p-6 rounded-lg w-96 border border-gray-700">
             <h3 className="text-xl font-semibold text-white mb-4">Create Channel</h3>
             
             <div className="space-y-4">

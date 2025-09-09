@@ -168,7 +168,7 @@ const upload = multer({
 });
 
 // Serve uploaded files statically
-// app.use('/api/uploads', express.static(uploadsDir));
+app.use('/api/uploads', express.static(uploadsDir));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
