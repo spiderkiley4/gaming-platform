@@ -1,39 +1,85 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Slot, Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef, useState } from 'react';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { useThemeColor } from '@/hooks/useThemeColor';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { ThemeProvider } from '@/context/ThemeContext';
 import { StatusBar } from 'expo-status-bar';
 import { View, KeyboardAvoidingView, Platform, AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 
 SplashScreen.preventAutoHideAsync();
 
-function useProtectedRoute(user: any) {
+function useProtectedRoute(user: any, loading: boolean) {
   const segments = useSegments();
   const router = useRouter();
   const initialRender = useRef(true);
 
   useEffect(() => {
+    console.log('[ProtectedRoute] Route check:', {
+      user: !!user,
+      loading,
+      segments: segments,
+      initialRender: initialRender.current
+    });
+
+    // Don't navigate while loading
+    if (loading) {
+      console.log('[ProtectedRoute] Still loading, skipping navigation');
+      return;
+    }
+
+    // Skip navigation on initial render, but handle it after a short delay
     if (initialRender.current) {
       initialRender.current = false;
+      console.log('[ProtectedRoute] Initial render, will check navigation after delay');
+      
+      // Check navigation after a short delay to ensure layout is ready
+      setTimeout(() => {
+        const inAuthGroup = segments[0] === '(auth)';
+        
+        if (!user && !inAuthGroup) {
+          console.log('[ProtectedRoute] Initial check - No user and not in auth group - navigating to auth');
+          router.replace('/(auth)/auth');
+        } else if (user && inAuthGroup) {
+          console.log('[ProtectedRoute] Initial check - User exists and in auth group - navigating to main app');
+          router.replace('/(tabs)');
+        } else if (user && segments.length <= 1) {
+          console.log('[ProtectedRoute] Initial check - User exists and at root - navigating to tabs');
+          router.replace('/(tabs)');
+        }
+      }, 200);
+      
       return;
     }
 
     const inAuthGroup = segments[0] === '(auth)';
 
     if (!user && !inAuthGroup) {
-      router.replace('/(auth)/auth');
+      console.log('[ProtectedRoute] No user and not in auth group - navigating to auth');
+      setTimeout(() => router.replace('/(auth)/auth'), 50);
     } else if (user && inAuthGroup) {
-      router.replace('/');
+      console.log('[ProtectedRoute] User exists and in auth group - navigating to main app');
+      setTimeout(() => router.replace('/(tabs)'), 50);
+    } else if (user && segments.length <= 1) {
+      console.log('[ProtectedRoute] User exists and at root - navigating to tabs');
+      setTimeout(() => router.replace('/(tabs)'), 50);
+    } else {
+      console.log('[ProtectedRoute] No navigation needed:', {
+        hasUser: !!user,
+        inAuthGroup,
+        currentPath: segments.join('/')
+      });
     }
-  }, [user, segments]);
+  }, [user, loading, segments]);
 }
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme() ?? 'light';
+  const backgroundColor = useThemeColor({}, 'background');
   const { user, loading } = useAuth();
   
   const [loaded] = useFonts({
@@ -46,14 +92,24 @@ function RootLayoutNav() {
     }
   }, [loaded]);
 
-  useProtectedRoute(user);
+  useEffect(() => {
+    console.log('[RootLayoutNav] State check:', {
+      user: !!user,
+      loading,
+      loaded,
+      shouldRender: !loaded || loading
+    });
+  }, [user, loading, loaded]);
+
+  useProtectedRoute(user, loading);
 
   if (!loaded || loading) {
+    console.log('[RootLayoutNav] Not rendering - loaded:', loaded, 'loading:', loading);
     return null;
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <NavigationThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
@@ -61,20 +117,20 @@ function RootLayoutNav() {
       >
         <View style={{
           flex: 1,
-          backgroundColor: '#1F2937'
+          backgroundColor: backgroundColor
         }}>
           <View
             style={{
               width: '100%',
               height: 20,
-              backgroundColor: '#1F2937',
+              backgroundColor: backgroundColor,
             }}
           />
           <StatusBar style="auto" />
           <Slot />
         </View>
       </KeyboardAvoidingView>
-    </ThemeProvider>
+    </NavigationThemeProvider>
   );
 }
 
@@ -204,9 +260,11 @@ function SocketManager() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <SocketManager />
-      <RootLayoutNav />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <SocketManager />
+        <RootLayoutNav />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

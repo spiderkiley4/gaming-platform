@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { Socket, io } from 'socket.io-client';
-import { API_URL } from '../api';
+import { API_URL } from '@/api';
 
 // Convert HTTPS URL to WSS URL for secure WebSocket connections
 const wsProtocol = API_URL.startsWith('https:') ? 'wss:' : 'ws:';
@@ -22,7 +22,7 @@ interface VoiceChatState {
   disconnect: () => void;
 }
 
-export const useVoiceChat = () => {
+export const useVoiceChat = (channelId?: number, socket?: Socket | null) => {
   const [isMuted, setIsMuted] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
   const [peers] = useState(new Map<string, PeerData>());
@@ -74,7 +74,7 @@ export const useVoiceChat = () => {
     }
 
     peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
+      if (event.candidate && socket) {
         console.log('Sending ICE candidate to', remoteUserId);
         socket.emit('relay_ice_candidate', {
           candidate: event.candidate,
@@ -102,6 +102,11 @@ export const useVoiceChat = () => {
   };
 
   const startVoiceChat = async () => {
+    if (!socket) {
+      console.error('[useVoiceChat] Cannot start voice chat: no socket available');
+      throw new Error('Socket not available');
+    }
+
     try {
       if (Platform.OS !== 'web') {
         console.warn('Voice chat is currently only supported on web');
@@ -158,10 +163,17 @@ export const useVoiceChat = () => {
     setIsConnected(false);
     setIsMuted(true);
 
-    socket.emit('voice_leave', { channelId });
+    if (socket) {
+      socket.emit('voice_leave', { channelId });
+    }
   };
 
   useEffect(() => {
+    if (!socket) {
+      console.log('[useVoiceChat] No socket available, skipping voice chat setup');
+      return;
+    }
+
     const handleVoiceUsers = async ({ users }: { users: any[] }) => {
       console.log('Received existing users:', users);
       if (!localStreamRef.current) return;

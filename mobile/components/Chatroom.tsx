@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, TextInput, Button, FlatList, TouchableOpacity, Image, Platform, KeyboardAvoidingView, AppState, Keyboard, TouchableWithoutFeedback, ScrollView } from 'react-native';
-import { getMessages, API_URL } from '../api';
+import { getMessages, API_URL } from '@/api';
 import { ThemedText } from './ThemedText';
 import { useVoiceChat } from '../hooks/useVoiceChat';
 import { useAuth } from '@/context/AuthContext';
+import { useThemeColor } from '@/hooks/useThemeColor';
+import { resolveAvatarUrl } from '../utils/mediaUrl';
+import FileViewer from './FileViewer';
 
 interface Message {
   id: number;
@@ -41,7 +44,93 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
   const [messageInput, setMessageInput] = useState('');
   const flatListRef = useRef<FlatList>(null);
   const [userScrolled, setUserScrolled] = useState(false);
+  const [resolvedAvatars, setResolvedAvatars] = useState<Map<string, string>>(new Map());
   const { socket, onlineUsers } = useAuth();
+  
+  // Function to resolve avatar URLs with authentication
+  const resolveAvatar = useCallback(async (avatarUrl: string | undefined) => {
+    if (!avatarUrl) return null;
+    
+    const cacheKey = avatarUrl;
+    if (resolvedAvatars.has(cacheKey)) {
+      return resolvedAvatars.get(cacheKey);
+    }
+    
+    try {
+      const resolvedUrl = await resolveAvatarUrl(avatarUrl);
+      setResolvedAvatars(prev => new Map(prev).set(cacheKey, resolvedUrl));
+      return resolvedUrl;
+    } catch (error) {
+      console.error('Error resolving avatar URL:', error);
+      return avatarUrl; // Fallback to original URL
+    }
+  }, [resolvedAvatars]);
+  
+  // Function to detect media files in message content
+  const detectMediaInMessage = useCallback((content: string) => {
+    const mediaExtensions = /\.(jpg|jpeg|png|gif|webp|mp4|mov|avi|mkv|webm)(\?.*)?$/i;
+    
+    // Match both full URLs and relative paths
+    const urlRegex = /(https?:\/\/[^\s]+|\/[^\s]*\.(jpg|jpeg|png|gif|webp|mp4|mov|avi|mkv|webm)(\?.*)?)/gi;
+    const urls = content.match(urlRegex) || [];
+    
+    return urls.filter(url => mediaExtensions.test(url));
+  }, []);
+  
+  // Function to get media type from URL
+  const getMediaType = useCallback((url: string): 'image' | 'video' => {
+    const videoExtensions = /\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i;
+    return videoExtensions.test(url) ? 'video' : 'image';
+  }, []);
+  
+  // Avatar component that handles async URL resolution
+  const Avatar = useCallback(({ avatarUrl, size = 32, style }: { avatarUrl?: string; size?: number; style?: any }) => {
+    const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
+    
+    useEffect(() => {
+      if (avatarUrl) {
+        resolveAvatar(avatarUrl).then(url => setResolvedUrl(url || null));
+      }
+    }, [avatarUrl, resolveAvatar]);
+    
+    if (resolvedUrl) {
+      return (
+        <Image 
+          source={{ uri: resolvedUrl }}
+          style={[{ width: size, height: size, borderRadius: size / 2 }, style]}
+        />
+      );
+    }
+    
+    return (
+      <View style={[{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#6B7280', alignItems: 'center', justifyContent: 'center' }, style]}>
+        <ThemedText style={{ color: 'white', fontWeight: 'bold', fontSize: size * 0.4 }}>
+          {username?.charAt(0).toUpperCase() || '?'}
+        </ThemedText>
+      </View>
+    );
+  }, [resolveAvatar, username]);
+  
+  // Theme colors - ensure they update when theme changes
+  const textMutedColor = useThemeColor({}, 'textMuted');
+  const playingColor = useThemeColor({}, 'playing');
+  const listeningColor = useThemeColor({}, 'listening');
+  const onlineColor = useThemeColor({}, 'online');
+  const voiceConnectedColor = useThemeColor({}, 'voiceConnected');
+  const voiceMutedColor = useThemeColor({}, 'voiceMuted');
+  const voiceSpeakingColor = useThemeColor({}, 'voiceSpeaking');
+  const primaryColor = useThemeColor({}, 'primary');
+  const primaryTextColor = useThemeColor({}, 'primaryText');
+  const backgroundColor = useThemeColor({}, 'background');
+  const backgroundSecondary = useThemeColor({}, 'backgroundSecondary');
+  const cardColor = useThemeColor({}, 'card');
+  const cardSecondary = useThemeColor({}, 'cardSecondary');
+  const borderColor = useThemeColor({}, 'border');
+  const borderSecondary = useThemeColor({}, 'borderSecondary');
+  const textColor = useThemeColor({}, 'text');
+  const successColor = useThemeColor({}, 'success');
+  const errorColor = useThemeColor({}, 'error');
+  const mutedColor = useThemeColor({}, 'muted');
   const { 
     isMuted, 
     isConnected, 
@@ -215,113 +304,140 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
     }
   }, [userScrolled]);
 
-  const formatMessageContent = (content: string) => {
+  const formatMessageContent = useCallback((content: string) => {
+    const mediaUrls = detectMediaInMessage(content);
     const parts = content.split(/(@\w+)/g);
-    return parts.map((part, index) => {
-      if (part.startsWith('@')) {
-        return (
-          <ThemedText
-            key={index}
-            style={{
-              color: '#60A5FA', // text-blue-400
-              backgroundColor: 'rgba(59, 130, 246, 0.2)', // bg-blue-500/20
-              paddingHorizontal: 6,
-              paddingVertical: 2,
-              borderRadius: 4,
-              fontWeight: '500',
-            }}
-          >
-            {part}
-          </ThemedText>
-        );
-      }
-      return <ThemedText key={index}>{part}</ThemedText>;
+    
+    // Remove media URLs from text content to avoid duplication
+    let textContent = content;
+    mediaUrls.forEach(url => {
+      textContent = textContent.replace(url, '').trim();
     });
-  };
-
-  // Update the message rendering to use the formatted content
-  const renderMessage = useCallback(({ item }: { item: Message }) => (
-    <View style={{
-      borderWidth: 1,
-      borderColor: '#4a5565',
-      padding: 8,
-      marginBottom: 10,
-      backgroundColor: item.user_id === userId ? '#3B82F6' : '#364153',
-      borderRadius: 8,
-      maxWidth: '80%',
-      alignSelf: item.user_id === userId ? 'flex-end' : 'flex-start',
-    }}>
-      <View style={{ 
-        flexDirection: 'row', 
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 4,
-      }}>
-        {item.avatar_url ? (
-          <Image 
-            source={{ uri: item.avatar_url }}
-            style={{ width: 24, height: 24, borderRadius: 12 }}
-          />
-        ) : (
-          <View style={{ 
-            width: 24, 
-            height: 24, 
-            borderRadius: 12,
-            backgroundColor: '#374151',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <ThemedText style={{ fontSize: 12 }}>
-              {(item.username || `U${item.user_id}`).charAt(0).toUpperCase()}
-            </ThemedText>
+    
+    return (
+      <View>
+        {/* Render text content only if there's actual text */}
+        {textContent && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            {parts.map((part, index) => {
+              if (part.startsWith('@')) {
+                return (
+                  <ThemedText
+                    key={index}
+                    style={{
+                      color: primaryTextColor,
+                      backgroundColor: primaryColor,
+                      paddingHorizontal: 6,
+                      paddingVertical: 2,
+                      borderRadius: 4,
+                      fontWeight: '500',
+                    }}
+                  >
+                    {part}
+                  </ThemedText>
+                );
+              }
+              return <ThemedText key={index}>{part}</ThemedText>;
+            })}
           </View>
         )}
-        <ThemedText style={{ fontSize: 12, color: '#9ca3af' }}>
-          {item.username || `User #${item.user_id}`}
-        </ThemedText>
-        <ThemedText style={{ fontSize: 12, color: '#9ca3af' }}>
-          {new Date(item.created_at).toLocaleTimeString()}
-        </ThemedText>
+        
+        {/* Render media files */}
+        {mediaUrls.map((url, index) => (
+          <FileViewer
+            key={`media-${index}`}
+            url={url}
+            type={getMediaType(url)}
+            style={{ marginTop: textContent ? 8 : 0 }}
+          />
+        ))}
       </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+    );
+  }, [primaryTextColor, primaryColor, detectMediaInMessage, getMediaType]);
+
+  // Update the message rendering to use the formatted content
+  const renderMessage = useCallback(({ item }: { item: Message }) => {
+    const isCurrentUser = item.user_id === userId;
+    return (
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        backgroundColor: isCurrentUser ? backgroundSecondary : cardColor,
+        borderBottomWidth: 1,
+        borderBottomColor: borderColor,
+        borderLeftWidth: isCurrentUser ? 3 : 0,
+        borderLeftColor: isCurrentUser ? primaryColor : 'transparent',
+      }}>
+      {/* Avatar */}
+      <View style={{ marginTop: 4 }}>
+        <Avatar avatarUrl={item.avatar_url} size={32} />
+      </View>
+
+      {/* Message Content */}
+      <View style={{ flex: 1 }}>
+        {/* User info and timestamp */}
+        <View style={{ 
+          flexDirection: 'row', 
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 4,
+        }}>
+          <ThemedText style={{ 
+            fontSize: 14, 
+            color: isCurrentUser ? primaryColor : textColor, 
+            fontWeight: '600' 
+          }}>
+            {item.username || `User #${item.user_id}`}
+            {isCurrentUser && ' (You)'}
+          </ThemedText>
+          <ThemedText style={{ fontSize: 12, color: textMutedColor }}>
+            {new Date(item.created_at).toLocaleTimeString()}
+          </ThemedText>
+        </View>
+        
+        {/* Message text and media */}
         {formatMessageContent(item.content)}
       </View>
     </View>
-  ), [userId]);
+    );
+  }, [userId, backgroundSecondary, cardColor, borderColor, primaryColor, primaryTextColor, textColor, textMutedColor, formatMessageContent]);
 
-  const renderUserPresence = (user: OnlineUser) => {
+  const renderUserPresence = useCallback((user: OnlineUser) => {
     if (user.presence) {
       switch (user.presence.type) {
         case 'playing':
           return (
-            <ThemedText style={{ fontSize: 12, color: '#10B981' }}>
+            <ThemedText style={{ fontSize: 12, color: playingColor }}>
               Playing {user.presence.name}
             </ThemedText>
           );
         case 'listening':
           return (
-            <ThemedText style={{ fontSize: 12, color: '#1DB954' }}>
+            <ThemedText style={{ fontSize: 12, color: listeningColor }}>
               {user.presence.name}
             </ThemedText>
           );
         default:
           return (
-            <ThemedText style={{ fontSize: 12, color: '#10B981' }}>
+            <ThemedText style={{ fontSize: 12, color: onlineColor }}>
               Online
             </ThemedText>
           );
       }
     }
     return (
-      <ThemedText style={{ fontSize: 12, color: '#10B981' }}>
+      <ThemedText style={{ fontSize: 12, color: onlineColor }}>
         Online
       </ThemedText>
     );
-  };
+  }, [playingColor, listeningColor, onlineColor]);
 
   if (type === 'voice') {
     return (
-      <View style={{ flex: 1, padding: 20, backgroundColor: '#1F2937' }}>
+      <View style={{ flex: 1, padding: 20, backgroundColor: backgroundColor }}>
         {/* Header with user info and controls */}
         <View style={{ 
           flexDirection: 'row', 
@@ -329,30 +445,14 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
           gap: 16, 
           marginBottom: 20,
           padding: 16,
-          backgroundColor: '#374151',
-          borderRadius: 8
+          backgroundColor: cardColor,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderColor: borderColor
         }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
             <View style={{ position: 'relative' }}>
-              {avatar ? (
-                <Image 
-                  source={{ uri: avatar }}
-                  style={{ width: 40, height: 40, borderRadius: 20 }}
-                />
-              ) : (
-                <View style={{ 
-                  width: 40, 
-                  height: 40, 
-                  borderRadius: 20,
-                  backgroundColor: '#4B5563',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <ThemedText style={{ fontSize: 18 }}>
-                    {username.charAt(0).toUpperCase()}
-                  </ThemedText>
-                </View>
-              )}
+              <Avatar avatarUrl={avatar} size={40} />
               {isConnected && (
                 <View style={{
                   position: 'absolute',
@@ -361,15 +461,15 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
                   width: 14,
                   height: 14,
                   borderRadius: 7,
-                  backgroundColor: isMuted ? '#EF4444' : '#10B981',
+                  backgroundColor: isMuted ? errorColor : successColor,
                   borderWidth: 2,
-                  borderColor: '#1F2937'
+                  borderColor: backgroundColor
                 }} />
               )}
             </View>
             <View>
               <ThemedText style={{ fontWeight: 'bold' }}>{username} (You)</ThemedText>
-              <ThemedText style={{ fontSize: 12, color: '#9CA3AF' }}>
+              <ThemedText style={{ fontSize: 12, color: textMutedColor }}>
                 {isConnected ? (isMuted ? 'Muted' : 'Speaking') : 'Not Connected'}
               </ThemedText>
             </View>
@@ -379,14 +479,14 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
             <TouchableOpacity
               onPress={isConnected ? disconnect : startVoiceChat}
               style={{
-                backgroundColor: isConnected ? '#DC2626' : '#059669',
+                backgroundColor: isConnected ? errorColor : successColor,
                 padding: 8,
                 borderRadius: 8,
                 minWidth: 100,
                 alignItems: 'center'
               }}
             >
-              <ThemedText style={{ color: 'white' }}>
+              <ThemedText style={{ color: primaryTextColor }}>
                 {isConnected ? 'Disconnect' : 'Join Voice'}
               </ThemedText>
             </TouchableOpacity>
@@ -394,14 +494,14 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
               <TouchableOpacity
                 onPress={toggleMute}
                 style={{
-                  backgroundColor: isMuted ? '#DC2626' : '#3B82F6',
+                  backgroundColor: isMuted ? errorColor : primaryColor,
                   padding: 8,
                   borderRadius: 8,
                   minWidth: 80,
                   alignItems: 'center'
                 }}
               >
-                <ThemedText style={{ color: 'white' }}>
+                <ThemedText style={{ color: primaryTextColor }}>
                   {isMuted ? 'Unmute' : 'Mute'}
                 </ThemedText>
               </TouchableOpacity>
@@ -410,7 +510,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
         </View>
 
         {/* Participants list */}
-        <View style={{ flex: 1, backgroundColor: '#374151', borderRadius: 8, padding: 16 }}>
+        <View style={{ flex: 1, backgroundColor: cardColor, borderRadius: 8, padding: 16, borderWidth: 1, borderColor: borderColor }}>
           <ThemedText style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>
             Voice Channel Participants
           </ThemedText>
@@ -418,13 +518,13 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
           <View style={{ flex: 1 }}>
             {isConnected && peers.size === 0 ? (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                <ThemedText style={{ color: '#9CA3AF' }}>
+                <ThemedText style={{ color: textMutedColor }}>
                   No other participants in this channel
                 </ThemedText>
               </View>
             ) : !isConnected ? (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                <ThemedText style={{ color: '#9CA3AF' }}>
+                <ThemedText style={{ color: textMutedColor }}>
                   Join voice to see other participants
                 </ThemedText>
               </View>
@@ -436,30 +536,14 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
                   alignItems: 'center', 
                   gap: 12, 
                   padding: 12,
-                  backgroundColor: '#4B5563',
+                  backgroundColor: cardSecondary,
                   borderRadius: 8,
-                  marginBottom: 8
+                  marginBottom: 8,
+                  borderWidth: 1,
+                  borderColor: borderSecondary
                 }}>
                   <View style={{ position: 'relative' }}>
-                    {avatar ? (
-                      <Image 
-                        source={{ uri: avatar }}
-                        style={{ width: 32, height: 32, borderRadius: 16 }}
-                      />
-                    ) : (
-                      <View style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        backgroundColor: '#6B7280',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        <ThemedText style={{ fontSize: 18 }}>
-                          {username.charAt(0).toUpperCase()}
-                        </ThemedText>
-                      </View>
-                    )}
+                    <Avatar avatarUrl={avatar} size={32} />
                     {isConnected && (
                       <View style={{
                         position: 'absolute',
@@ -468,15 +552,15 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
                         width: 14,
                         height: 14,
                         borderRadius: 7,
-                        backgroundColor: isMuted ? '#EF4444' : '#10B981',
+                        backgroundColor: isMuted ? errorColor : successColor,
                         borderWidth: 2,
-                        borderColor: '#1F2937'
+                        borderColor: backgroundColor
                       }} />
                     )}
                   </View>
                   <View>
                     <ThemedText style={{ fontWeight: 'bold' }}>{username} (You)</ThemedText>
-                    <ThemedText style={{ fontSize: 12, color: '#9CA3AF' }}>
+                    <ThemedText style={{ fontSize: 12, color: textMutedColor }}>
                       {isConnected ? (isMuted ? 'Muted' : 'Speaking') : 'Not Connected'}
                     </ThemedText>
                   </View>
@@ -491,30 +575,14 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
                       alignItems: 'center', 
                       gap: 12,
                       padding: 12,
-                      backgroundColor: '#4B5563',
+                      backgroundColor: cardSecondary,
                       borderRadius: 8,
-                      marginBottom: 8
+                      marginBottom: 8,
+                      borderWidth: 1,
+                      borderColor: borderSecondary
                     }}>
                       <View style={{ position: 'relative' }}>
-                        {peer.avatar ? (
-                          <Image 
-                            source={{ uri: peer.avatar }}
-                            style={{ width: 32, height: 32, borderRadius: 16 }}
-                          />
-                        ) : (
-                          <View style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: '#6B7280',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            <ThemedText style={{ fontSize: 18 }}>
-                              {peer.username?.charAt(0).toUpperCase() || 'U'}
-                            </ThemedText>
-                          </View>
-                        )}
+                        <Avatar avatarUrl={peer.avatar} size={32} />
                         <View style={{
                           position: 'absolute',
                           bottom: -2,
@@ -522,9 +590,9 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
                           width: 14,
                           height: 14,
                           borderRadius: 7,
-                          backgroundColor: '#10B981',
+                          backgroundColor: successColor,
                           borderWidth: 2,
-                          borderColor: '#1F2937'
+                          borderColor: backgroundColor
                         }} />
                       </View>
                       <View>
@@ -532,7 +600,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
                           {peer.username || `User ${peerId.slice(0, 4)}`}
                         </ThemedText>
                         {user ? renderUserPresence(user) : (
-                          <ThemedText style={{ fontSize: 12, color: '#9CA3AF' }}>
+                          <ThemedText style={{ fontSize: 12, color: textMutedColor }}>
                             Speaking
                           </ThemedText>
                         )}
@@ -549,8 +617,8 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#1F2937' }}>
-      <View style={{ flex: 1, backgroundColor: '#1F2937', paddingHorizontal: 8 }}>
+    <View style={{ flex: 1, backgroundColor: backgroundColor }}>
+      <View style={{ flex: 1, backgroundColor: backgroundColor }}>
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -568,27 +636,31 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
             minIndexForVisible: 0,
             autoscrollToTopThreshold: 10
           }}
+          showsVerticalScrollIndicator={false}
         />
         <View style={{ 
           flexDirection: 'row', 
           gap: 8,
-          paddingTop: 8,
-          paddingBottom: Platform.OS === 'ios' ? 0 : 8,
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: Platform.OS === 'ios' ? 8 : 12,
           borderTopWidth: 1,
-          borderTopColor: '#4a5565',
-          backgroundColor: '#1F2937'
+          borderTopColor: borderColor,
+          backgroundColor: backgroundColor
         }}>
           <TextInput
             value={messageInput}
             style={{
               flex: 1,
-              color: 'white',
+              color: textColor,
               padding: 12,
-              backgroundColor: '#374151',
+              backgroundColor: cardColor,
               borderRadius: 8,
               maxHeight: 100,
+              borderWidth: 1,
+              borderColor: borderColor,
             }}
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={textMutedColor}
             onChangeText={setMessageInput}
             placeholder="Type a message"
             onSubmitEditing={sendMessage}
@@ -599,13 +671,13 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
           <TouchableOpacity
             onPress={sendMessage}
             style={{
-              backgroundColor: '#3B82F6',
+              backgroundColor: primaryColor,
               padding: 12,
               borderRadius: 8,
               justifyContent: 'center'
             }}
           >
-            <ThemedText style={{ color: 'white' }}>Send</ThemedText>
+            <ThemedText style={{ color: primaryTextColor }}>Send</ThemedText>
           </TouchableOpacity>
         </View>
       </View>

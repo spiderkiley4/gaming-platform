@@ -17,7 +17,9 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#1F2937"
       },
-      "package": "com.anonymous.mobile"
+      "package": "com.anonymous.mobile",
+      "usesCleartextTraffic": true,
+      "networkSecurityConfig": "./network_security_config.xml"
     },
     "web": {
       "bundler": "metro",

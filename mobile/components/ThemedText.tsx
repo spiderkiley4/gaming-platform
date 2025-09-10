@@ -6,6 +6,7 @@ export type ThemedTextProps = TextProps & {
   lightColor?: string;
   darkColor?: string;
   type?: 'default' | 'title' | 'defaultSemiBold' | 'subtitle' | 'link';
+  variant?: 'primary' | 'secondary' | 'muted' | 'inverse';
 };
 
 export function ThemedText({
@@ -13,9 +14,24 @@ export function ThemedText({
   lightColor,
   darkColor,
   type = 'default',
+  variant = 'primary',
   ...rest
 }: ThemedTextProps) {
-  const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
+  // Determine which color property to use based on variant
+  const getColorProperty = () => {
+    switch (variant) {
+      case 'secondary':
+        return 'textSecondary';
+      case 'muted':
+        return 'textMuted';
+      case 'inverse':
+        return 'textInverse';
+      default:
+        return 'text';
+    }
+  };
+
+  const color = useThemeColor({ light: lightColor, dark: darkColor }, getColorProperty());
 
   return (
     <Text
@@ -55,6 +71,5 @@ const styles = StyleSheet.create({
   link: {
     lineHeight: 30,
     fontSize: 16,
-    color: '#0a7ea4',
   },
 });

@@ -67,4 +67,34 @@ export const createChannel = (name: string, type: 'text' | 'voice' = 'text') => 
 export const getMessages = (channelId: number) => 
   api.get(`/api/channels/${channelId}/messages`);
 
+// Server-related API functions
+export const getServers = () => 
+  api.get('/api/servers');
+
+export const createServer = (name: string, description?: string) => 
+  api.post('/api/servers', { name, description });
+
+export const getServer = (serverId: number) => 
+  api.get(`/api/servers/${serverId}`);
+
+export const getServerMembers = (serverId: number) => 
+  api.get(`/api/servers/${serverId}/members`);
+
+export const getServerChannels = (serverId: number, type?: 'text' | 'voice') => {
+  const params = type ? { type } : {};
+  return api.get(`/api/servers/${serverId}/channels`, { params });
+};
+
+export const createServerChannel = (serverId: number, name: string, type: 'text' | 'voice') => 
+  api.post(`/api/servers/${serverId}/channels`, { name, type });
+
+export const getServerChannelMessages = (serverId: number, channelId: number) => 
+  api.get(`/api/servers/${serverId}/channels/${channelId}/messages`);
+
+export const createServerInvite = (serverId: number, options?: { max_uses?: number; expires_in?: number }) => 
+  api.post(`/api/servers/${serverId}/invites`, options);
+
+export const joinServerByInvite = (inviteCode: string) => 
+  api.post('/api/servers/join', { invite_code: inviteCode });
+
 export default api;

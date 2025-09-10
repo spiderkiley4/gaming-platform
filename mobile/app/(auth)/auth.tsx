@@ -89,6 +89,7 @@ export default function AuthScreen() {
             {isLogin ? "Don't have an account? Register" : "Already have an account? Login"}
           </ThemedText>
         </TouchableOpacity>
+
       </ThemedView>
     </ThemedView>
   );

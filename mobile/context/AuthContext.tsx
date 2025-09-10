@@ -1,11 +1,11 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { getCurrentUser, login, register } from '../api';
+import { getCurrentUser, login, register } from '@/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { io, Socket } from 'socket.io-client';
-import { API_URL } from '../api';
-import axios from 'axios';
+import { Socket } from 'socket.io-client';
 import { Alert } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import { initSocket, disconnectSocket, getSocket } from '../utils/socket';
+import { router } from 'expo-router';
 
 interface User {
   id: number;
@@ -34,147 +34,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-let socket: Socket | null = null;
-
-const initSocket = (token: string) => {
-  console.log('[Auth] Initializing socket connection...');
-  if (!token) {
-    console.warn('[Auth] No token provided, cannot initialize socket');
-    return null;
-  }
-
-  if (socket?.connected) {
-    console.log('[Auth] Reusing existing connected socket:', {
-      id: socket.id,
-      transport: socket.io?.engine?.transport?.name,
-      readyState: socket.io?.engine?.readyState
-    });
-    return socket;
-  }
-
-  if (socket) {
-    console.log('[Auth] Disconnecting existing socket before reinitializing');
-    socket.disconnect();
-  }
-
-  console.log('[Auth] Creating new socket instance with config:', {
-    url: API_URL,
-    transports: ['websocket', 'polling'],
-    hasToken: !!token
-  });
-
-  socket = io(API_URL, {
-    transports: ['websocket', 'polling'],
-    upgrade: true,
-    auth: { token },
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    randomizationFactor: 0.5,
-    timeout: 20000,
-    forceNew: true,
-    autoConnect: true
-  });
-
-  // Add a timeout to prevent hanging
-  const connectionTimeout = setTimeout(() => {
-    if (socket && !socket.connected) {
-      console.warn('[Auth] Socket connection timeout, cleaning up');
-      socket.disconnect();
-      socket = null;
-    }
-  }, 15000); // 15 second timeout
-
-  socket.on('connect', () => {
-    console.log('[Auth] Socket connected successfully:', {
-      id: socket?.id,
-      transport: socket?.io?.engine?.transport?.name,
-      readyState: socket?.io?.engine?.readyState
-    });
-    clearTimeout(connectionTimeout);
-    socket?.emit('get_online_users');
-  });
-
-  socket.on('disconnect', (reason) => {
-    console.log('[Socket] Disconnected. Reason:', reason);
-    console.log('[Socket] Was connected:', socket?.connected);
-    console.log('[Socket] Current state:', socket?.io?.engine?.readyState);
-    clearTimeout(connectionTimeout);
-    
-    if (reason === 'io server disconnect') {
-      console.log('[Socket] Server initiated disconnect, attempting reconnect...');
-      socket?.connect();
-    }
-  });
-
-  socket.on('connect_error', async (error: Error & { description?: string }) => {
-    console.error('[Auth] Socket connection error:', {
-      message: error.message,
-      description: error.description,
-      transport: socket?.io?.engine?.transport?.name,
-      readyState: socket?.io?.engine?.readyState
-    });
-    clearTimeout(connectionTimeout);
-
-    if (error.message === 'Authentication required' || error.message === 'Invalid token') {
-      console.log('[Auth] Authentication error, clearing token');
-      await AsyncStorage.removeItem('token');
-    } else {
-      console.log('[Socket] Attempting reconnect after error...');
-      setTimeout(() => {
-        if (socket && !socket.connected) {
-          console.log('[Socket] Retrying connection...');
-          socket.connect();
-        }
-      }, 1000);
-    }
-  });
-
-  socket.io.on('reconnect', (attemptNumber) => {
-    console.log('[Socket] Reconnected after', attemptNumber, 'attempts');
-    console.log('[Socket] New socket ID:', socket?.id);
-  });
-
-  socket.io.on('reconnect_attempt', (attempt) => {
-    console.log('[Auth] Socket reconnection attempt:', {
-      attempt,
-      transport: socket?.io?.engine?.transport?.name,
-      readyState: socket?.io?.engine?.readyState
-    });
-  });
-
-  socket.io.on('reconnect_error', (error) => {
-    console.error('[Auth] Socket reconnection error:', {
-      error,
-      transport: socket?.io?.engine?.transport?.name,
-      readyState: socket?.io?.engine?.readyState
-    });
-  });
-
-  socket.io.on('reconnect_failed', () => {
-    console.error('[Auth] Socket reconnection failed after all attempts:', {
-      transport: socket?.io?.engine?.transport?.name,
-      readyState: socket?.io?.engine?.readyState
-    });
-  });
-
-  socket.io.on('ping', () => {
-    console.log('[Socket] Ping sent at:', new Date().toISOString());
-  });
-
-  console.log('[Socket] Connecting socket...');
-  socket.connect();
-  return socket;
-};
-
-const disconnectSocket = () => {
-  if (socket) {
-    console.log('[Auth] Disconnecting socket...');
-    socket.disconnect();
-    socket = null;
-  }
-};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -189,7 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const token = await AsyncStorage.getItem('token');
       if (token) {
         console.log('[Auth] Attempting to initialize socket with token');
-        const newSocket = initSocket(token);
+        const newSocket = await initSocket();
         if (newSocket) {
           console.log('[Auth] Socket initialized successfully');
           setSocketInstance(newSocket);
@@ -218,35 +77,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const loadUser = async () => {
       try {
         console.log('[Auth] Loading user and initializing socket...');
+        setLoading(true);
         const token = await AsyncStorage.getItem('token');
         if (token) {
-          const res = await getCurrentUser();
-          setUser(res.data);
-          
-          // Initialize socket asynchronously without blocking the user load
-          setTimeout(async () => {
-            try {
-              const newSocket = await initializeSocket();
-              if (newSocket) {
-                setSocketInstance(newSocket);
-              } else {
-                console.warn('[Auth] Could not initialize socket during user load');
+          try {
+            const res = await getCurrentUser();
+            setUser(res.data);
+            
+            // Initialize socket asynchronously without blocking the user load
+            setTimeout(async () => {
+              try {
+                const newSocket = await initializeSocket();
+                if (newSocket) {
+                  setSocketInstance(newSocket);
+                } else {
+                  console.warn('[Auth] Could not initialize socket during user load');
+                }
+              } catch (socketError) {
+                console.error('[Auth] Socket initialization error during user load:', socketError);
+                // Don't throw error here as user load was successful
               }
-            } catch (socketError) {
-              console.error('[Auth] Socket initialization error during user load:', socketError);
-              // Don't throw error here as user load was successful
+            }, 100);
+          } catch (authError: any) {
+            console.error('[Auth] Authentication failed - token may be invalid:', authError);
+            if (authError.response?.status === 401) {
+              console.log('[Auth] Token is invalid, clearing auth state');
+              await logout();
+            } else {
+              // For other errors, still clear the token as it might be corrupted
+              await logout();
             }
-          }, 100);
-          
+          }
         } else {
           console.log('[Auth] No token found during initial load');
         }
       } catch (error) {
         console.error('[Auth] Failed to load user:', error);
-        await AsyncStorage.removeItem('token');
-        handleDisconnectSocket();
-        setUser(null);
+        await logout();
       } finally {
+        console.log('[Auth] Setting loading to false');
         setLoading(false);
       }
     };
@@ -274,9 +143,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       // Only attempt reconnection if we have a socket instance
-      if (state.isConnected && socket?.disconnected) {
+      const currentSocket = getSocket();
+      if (state.isConnected && currentSocket?.disconnected) {
         console.log('[Socket] Network available, attempting reconnection');
-        socket.connect();
+        currentSocket.connect();
       }
     });
 
@@ -285,7 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       netInfoUnsubscribe();
     };
-  }, [socket]);
+  }, [socketInstance]);
 
   const loginUser = async (username: string, password: string) => {
     try {
@@ -305,7 +175,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Initialize socket asynchronously without blocking the login
       setTimeout(async () => {
         try {
-          const newSocket = initSocket(res.data.token);
+          const newSocket = await initSocket();
           if (newSocket) {
             setSocketInstance(newSocket);
           } else {
@@ -344,7 +214,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Initialize socket asynchronously without blocking the registration
       setTimeout(async () => {
         try {
-          const newSocket = initSocket(res.data.token);
+          const newSocket = await initSocket();
           if (newSocket) {
             setSocketInstance(newSocket);
           } else {
@@ -367,14 +237,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
+      console.log('[Auth] Logging out user...');
       await AsyncStorage.removeItem('token');
       disconnectSocket();
       setSocketInstance(null);
       setUser(null);
+      setOnlineUsers(new Map());
+      setOfflineUsers(new Map());
+      console.log('[Auth] Logout completed successfully - user state cleared');
+      
+      // Force navigation to auth screen
+      setTimeout(() => {
+        console.log('[Auth] Navigating to auth screen after logout');
+        router.replace('/(auth)/auth');
+      }, 100);
     } catch (err) {
-      console.error('Logout failed:', err);
+      console.error('[Auth] Logout failed:', err);
+      // Force clear state even if storage fails
+      setUser(null);
+      setSocketInstance(null);
+      setOnlineUsers(new Map());
+      setOfflineUsers(new Map());
+      console.log('[Auth] Force cleared user state after logout error');
+      
+      // Force navigation to auth screen even on error
+      setTimeout(() => {
+        console.log('[Auth] Navigating to auth screen after logout error');
+        router.replace('/(auth)/auth');
+      }, 100);
     }
   };
+
 
   const updatePresence = (presence: { type: string; name: string; } | null) => {
     if (socketInstance) {
