@@ -1,16 +1,19 @@
-import { View, TextInput, TouchableOpacity, Alert, Image, ScrollView, Dimensions, Text } from 'react-native';
+import { View, TextInput, TouchableOpacity, Alert, Image, ScrollView, Dimensions, Text, KeyboardAvoidingView, Platform } from 'react-native';
 import { useEffect, useState, useCallback } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, runOnJS } from 'react-native-reanimated';
 import { getServers } from '@/api';
 import ChatRoom from '@/components/Chatroom';
 import ServerList from '@/components/ServerList';
 import ServerChannels from '@/components/ServerChannels';
 import ServerMembers from '@/components/ServerMembers';
+import SwipeView from '@/components/SwipeView';
 import { useAuth } from '@/context/AuthContext';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import ThemeToggle from '@/components/ThemeToggle';
+import { useTheme } from '@/context/ThemeContext';
 import { resolveAvatarUrl } from '@/utils/mediaUrl';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -30,6 +33,7 @@ interface Server {
 
 export default function TabOneScreen() {
   const { user, logout, socket } = useAuth();
+  const { isDark } = useTheme();
   const primaryColor = useThemeColor({}, 'primary');
   const primaryTextColor = useThemeColor({}, 'primaryText');
   const textColor = useThemeColor({}, 'text');
@@ -39,6 +43,7 @@ export default function TabOneScreen() {
   const cardColor = useThemeColor({}, 'card');
   const backgroundColor = useThemeColor({}, 'background');
   const mutedColor = useThemeColor({}, 'muted');
+  const iconColor = useThemeColor({}, 'icon');
   
   const [resolvedAvatarUrl, setResolvedAvatarUrl] = useState<string | null>(null);
   
@@ -68,6 +73,82 @@ export default function TabOneScreen() {
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
   const [activeTab, setActiveTab] = useState<'servers' | 'friends' | 'nitro'>('servers');
   const [currentView, setCurrentView] = useState<'servers' | 'channels' | 'chat' | 'members'>('servers');
+  const [isSwipeViewOpen, setIsSwipeViewOpen] = useState(false);
+  
+  // Reset swipe position when panel state changes
+  useEffect(() => {
+    // Only reset if we're not in the middle of a gesture
+    // The gesture handler will manage the position during swipes
+    if (isSwipeViewOpen) {
+      swipeStartX.value = screenWidth * 0.8;
+    } else {
+      swipeStartX.value = 0;
+    }
+  }, [isSwipeViewOpen]);
+  
+  // Swipe gesture handling
+  const swipeStartX = useSharedValue(0);
+  const SWIPE_THRESHOLD = 60;
+
+  const swipeGesture = Gesture.Pan()
+    .onStart(() => {
+      // Don't reset here - let it accumulate during the gesture
+    })
+    .onUpdate((event) => {
+      // Check if it's primarily a horizontal swipe (not vertical)
+      const isHorizontalSwipe = Math.abs(event.translationX) > Math.abs(event.translationY);
+      
+      if (isHorizontalSwipe) {
+        if (event.translationX > 0 && !isSwipeViewOpen) {
+          // Opening: Make it feel like you're directly dragging the panel
+          const resistance = 0.8; // Slight resistance to make it feel natural
+          const panelPosition = Math.min(event.translationX * resistance, screenWidth * 0.8);
+          swipeStartX.value = panelPosition;
+        } else if (event.translationX < 0 && isSwipeViewOpen) {
+          // Closing: Panel is open, allow left swipe to close
+          const resistance = 0.8;
+          // Start from full open position and subtract the left swipe distance
+          const panelPosition = Math.max(screenWidth * 0.8 + (event.translationX * resistance), 0);
+          swipeStartX.value = panelPosition;
+        } else if (event.translationX > 0 && isSwipeViewOpen) {
+          // Panel is open but swiping right - keep it at full open
+          swipeStartX.value = screenWidth * 0.8;
+        }
+      } else {
+        // Reset if not horizontal swipe
+        swipeStartX.value = isSwipeViewOpen ? screenWidth * 0.8 : 0;
+      }
+    })
+    .onEnd((event) => {
+      // Check if it's primarily a horizontal swipe and meets threshold
+      const isHorizontalSwipe = Math.abs(event.translationX) > Math.abs(event.translationY);
+      
+      if (isHorizontalSwipe) {
+        if (event.translationX > SWIPE_THRESHOLD && !isSwipeViewOpen) {
+          // Opening threshold met
+          runOnJS(setIsSwipeViewOpen)(true);
+        } else if (event.translationX < -SWIPE_THRESHOLD && isSwipeViewOpen) {
+          // Closing threshold met
+          runOnJS(setIsSwipeViewOpen)(false);
+        } else {
+          // Threshold not met, snap back to current state
+          swipeStartX.value = withSpring(isSwipeViewOpen ? screenWidth * 0.8 : 0, {
+            damping: 20,
+            stiffness: 300,
+            mass: 1,
+          });
+        }
+      } else {
+        // Not a horizontal swipe, snap back to current state
+        swipeStartX.value = withSpring(isSwipeViewOpen ? screenWidth * 0.8 : 0, {
+          damping: 20,
+          stiffness: 300,
+          mass: 1,
+        });
+      }
+    })
+    .activeOffsetX([-10, 10])
+    .failOffsetY([-20, 20]);
 
   // Show loading or redirect if no user
   if (!user) {
@@ -82,6 +163,17 @@ export default function TabOneScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: backgroundColor }}>
       <ThemedView style={{ flex: 1 }}>
+        {/* Swipe View */}
+        <SwipeView 
+          isOpen={isSwipeViewOpen} 
+          onClose={() => setIsSwipeViewOpen(false)}
+          swipePosition={swipeStartX}
+          enableInternalGesture={false}
+        />
+        
+        {/* Main Content with Gesture Handler */}
+        <GestureDetector gesture={swipeGesture}>
+          <Animated.View style={{ flex: 1 }}>
         {/* User Profile Header */}
       <ThemedView style={{ 
         flexDirection: 'row', 
@@ -98,6 +190,32 @@ export default function TabOneScreen() {
         shadowRadius: 2,
       }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity
+            onPress={() => setIsSwipeViewOpen(true)}
+            style={{ padding: 4 }}
+          >
+            <View style={{ width: 20, height: 16, justifyContent: 'space-between' }}>
+              <View style={{ 
+                height: 2, 
+                backgroundColor: iconColor, 
+                borderRadius: 1 
+              }} />
+              <View style={{ 
+                height: 2, 
+                backgroundColor: iconColor, 
+                borderRadius: 1 
+              }} />
+              <View style={{ 
+                height: 2, 
+                backgroundColor: iconColor, 
+                borderRadius: 1 
+              }} />
+            </View>
+          </TouchableOpacity>
+          <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>{user?.username}</ThemedText>
+        </View>
+        
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {resolvedAvatarUrl ? (
             <Image 
               source={{ uri: resolvedAvatarUrl }}
@@ -121,25 +239,6 @@ export default function TabOneScreen() {
               </ThemedText>
             </View>
           )}
-          <ThemedText type="defaultSemiBold" style={{ fontSize: 16 }}>{user?.username}</ThemedText>
-        </View>
-        
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <ThemeToggle />
-          <TouchableOpacity
-            onPress={logout}
-            style={{
-              backgroundColor: errorColor,
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              borderRadius: 8,
-              minHeight: 40,
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <ThemedText style={{ color: errorTextColor, fontSize: 14, fontWeight: '600' }}>Logout</ThemedText>
-          </TouchableOpacity>
         </View>
       </ThemedView>
 
@@ -147,6 +246,7 @@ export default function TabOneScreen() {
       <ThemedView style={{ 
         flexDirection: 'row', 
         marginHorizontal: 16,
+        marginTop: 16,
         marginBottom: 16,
         borderRadius: 8,
         overflow: 'hidden',
@@ -300,13 +400,19 @@ export default function TabOneScreen() {
             )}
 
             {currentView === 'chat' && selectedChannel ? (
-              <ChatRoom
-                channelId={selectedChannel.id}
-                userId={user?.id || 0}
-                type={selectedChannel.type}
-                username={user?.username || ''}
-                avatar={user?.avatar_url}
-              />
+              <KeyboardAvoidingView 
+                style={{ flex: 1 }}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+              >
+                <ChatRoom
+                  channelId={selectedChannel.id}
+                  userId={user?.id || 0}
+                  type={selectedChannel.type}
+                  username={user?.username || ''}
+                  avatar={user?.avatar_url}
+                />
+              </KeyboardAvoidingView>
             ) : currentView === 'chat' ? (
               <View style={{ 
                 flex: 1, 
@@ -408,6 +514,8 @@ export default function TabOneScreen() {
           </TouchableOpacity>
         </View>
       )}
+          </Animated.View>
+        </GestureDetector>
       </ThemedView>
     </SafeAreaView>
   );

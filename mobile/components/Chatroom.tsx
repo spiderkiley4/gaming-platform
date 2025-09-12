@@ -142,7 +142,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const hasLoadedMessages = useRef(false);
   const isCurrentChannel = useRef(true);
-  const retryTimeout = useRef<NodeJS.Timeout>();
+  const retryTimeout = useRef<NodeJS.Timeout | undefined>(undefined);
   const channelRef = useRef(channelId);
 
   // Update channel ref when it changes
@@ -618,68 +618,66 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
 
   return (
     <View style={{ flex: 1, backgroundColor: backgroundColor }}>
-      <View style={{ flex: 1, backgroundColor: backgroundColor }}>
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id.toString()}
-          style={{ flex: 1 }}
-          onScroll={handleScroll}
-          onContentSizeChange={handleContentSizeChange}
-          keyboardDismissMode="on-drag"
-          keyboardShouldPersistTaps="handled"
-          renderItem={renderMessage}
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          maintainVisibleContentPosition={{
-            minIndexForVisible: 0,
-            autoscrollToTopThreshold: 10
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        keyExtractor={(item) => item.id.toString()}
+        style={{ flex: 1 }}
+        onScroll={handleScroll}
+        onContentSizeChange={handleContentSizeChange}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        renderItem={renderMessage}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+          autoscrollToTopThreshold: 10
+        }}
+        showsVerticalScrollIndicator={false}
+      />
+      <View style={{ 
+        flexDirection: 'row', 
+        gap: 8,
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        paddingBottom: Platform.OS === 'ios' ? 8 : 12,
+        borderTopWidth: 1,
+        borderTopColor: borderColor,
+        backgroundColor: backgroundColor
+      }}>
+        <TextInput
+          value={messageInput}
+          style={{
+            flex: 1,
+            color: textColor,
+            padding: 12,
+            backgroundColor: cardColor,
+            borderRadius: 8,
+            maxHeight: 100,
+            borderWidth: 1,
+            borderColor: borderColor,
           }}
-          showsVerticalScrollIndicator={false}
+          placeholderTextColor={textMutedColor}
+          onChangeText={setMessageInput}
+          placeholder="Type a message"
+          onSubmitEditing={sendMessage}
+          multiline
+          maxLength={1000}
+          returnKeyType="send"
         />
-        <View style={{ 
-          flexDirection: 'row', 
-          gap: 8,
-          paddingHorizontal: 16,
-          paddingTop: 12,
-          paddingBottom: Platform.OS === 'ios' ? 8 : 12,
-          borderTopWidth: 1,
-          borderTopColor: borderColor,
-          backgroundColor: backgroundColor
-        }}>
-          <TextInput
-            value={messageInput}
-            style={{
-              flex: 1,
-              color: textColor,
-              padding: 12,
-              backgroundColor: cardColor,
-              borderRadius: 8,
-              maxHeight: 100,
-              borderWidth: 1,
-              borderColor: borderColor,
-            }}
-            placeholderTextColor={textMutedColor}
-            onChangeText={setMessageInput}
-            placeholder="Type a message"
-            onSubmitEditing={sendMessage}
-            multiline
-            maxLength={1000}
-            returnKeyType="send"
-          />
-          <TouchableOpacity
-            onPress={sendMessage}
-            style={{
-              backgroundColor: primaryColor,
-              padding: 12,
-              borderRadius: 8,
-              justifyContent: 'center'
-            }}
-          >
-            <ThemedText style={{ color: primaryTextColor }}>Send</ThemedText>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          onPress={sendMessage}
+          style={{
+            backgroundColor: primaryColor,
+            padding: 12,
+            borderRadius: 8,
+            justifyContent: 'center'
+          }}
+        >
+          <ThemedText style={{ color: primaryTextColor }}>Send</ThemedText>
+        </TouchableOpacity>
       </View>
     </View>
   );

@@ -6,6 +6,7 @@ import { Alert } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { initSocket, disconnectSocket, getSocket } from '../utils/socket';
 import { router } from 'expo-router';
+import { savePreviousUser } from '../utils/userStorage';
 
 interface User {
   id: number;
@@ -172,6 +173,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Set user first, then initialize socket asynchronously
       setUser(res.data.user);
       
+      // Save user to previous users list
+      await savePreviousUser({
+        id: res.data.user.id,
+        username: res.data.user.username,
+        email: res.data.user.email,
+        avatar_url: res.data.user.avatar_url
+      });
+      
       // Initialize socket asynchronously without blocking the login
       setTimeout(async () => {
         try {
@@ -210,6 +219,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Set user first, then initialize socket asynchronously
       setUser(res.data.user);
+      
+      // Save user to previous users list
+      await savePreviousUser({
+        id: res.data.user.id,
+        username: res.data.user.username,
+        email: res.data.user.email,
+        avatar_url: res.data.user.avatar_url
+      });
       
       // Initialize socket asynchronously without blocking the registration
       setTimeout(async () => {

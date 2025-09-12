@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { StatusBar } from 'expo-status-bar';
 import { View, KeyboardAvoidingView, Platform, AppState } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import NetInfo from '@react-native-community/netinfo';
 
 SplashScreen.preventAutoHideAsync();
@@ -110,19 +111,13 @@ function RootLayoutNav() {
 
   return (
     <NavigationThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-      >
-        <View style={{
-          flex: 1,
-          backgroundColor: backgroundColor
-        }}>
-          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-          <Slot />
-        </View>
-      </KeyboardAvoidingView>
+      <View style={{
+        flex: 1,
+        backgroundColor: backgroundColor
+      }}>
+        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+        <Slot />
+      </View>
     </NavigationThemeProvider>
   );
 }
@@ -130,7 +125,7 @@ function RootLayoutNav() {
 function SocketManager() {
   const { socket, user } = useAuth();
   const startTime = useRef(Date.now());
-  const disconnectTimeout = useRef<NodeJS.Timeout>();
+  const disconnectTimeout = useRef<NodeJS.Timeout | undefined>(undefined);
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
@@ -253,11 +248,13 @@ function SocketManager() {
 
 export default function RootLayout() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <SocketManager />
-        <RootLayoutNav />
-      </AuthProvider>
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <AuthProvider>
+          <SocketManager />
+          <RootLayoutNav />
+        </AuthProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -1,13 +1,11 @@
 import React from 'react';
-import { TouchableOpacity, StyleSheet } from 'react-native';
+import { TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { ThemedText } from './ThemedText';
 import { useTheme } from '@/context/ThemeContext';
 import { useThemeColor } from '@/hooks/useThemeColor';
 
 export default function ThemeToggle() {
   const { themeMode, setThemeMode, isDark } = useTheme();
-  const primaryColor = useThemeColor({}, 'primary');
-  const primaryTextColor = useThemeColor({}, 'primaryText');
   const borderColor = useThemeColor({}, 'border');
 
   const toggleTheme = () => {
@@ -35,37 +33,40 @@ export default function ThemeToggle() {
   return (
     <TouchableOpacity
       style={[
-        styles.themeToggle,
+        styles.menuButton,
         {
-          backgroundColor: primaryColor,
+          backgroundColor: isDark ? '#6366F120' : '#6366F115',
           borderColor: borderColor,
         }
       ]}
       onPress={toggleTheme}
     >
-      <ThemedText style={styles.themeIcon}>{getThemeIcon()}</ThemedText>
-      <ThemedText style={[styles.themeLabel, { color: primaryTextColor }]}>{getThemeLabel()}</ThemedText>
+      <Text style={styles.menuIcon}>{getThemeIcon()}</Text>
+      <ThemedText style={styles.menuButtonText}>{getThemeLabel()}</ThemedText>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  themeToggle: {
+  menuButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginHorizontal: 16,
+    marginVertical: 4,
     borderRadius: 8,
-    minHeight: 40,
-    justifyContent: 'center',
     borderWidth: 1,
-    gap: 6,
   },
-  themeIcon: {
+  menuIcon: {
+    fontSize: 20,
+    marginRight: 16,
+    width: 24,
+    textAlign: 'center',
+  },
+  menuButtonText: {
     fontSize: 16,
-  },
-  themeLabel: {
-    fontSize: 12,
+    flex: 1,
     fontWeight: '600',
   },
 });
