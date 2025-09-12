@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Jemcord
+Comment=Gaming Platform
+Exec=jemcord
+Icon=jemcord
+Terminal=false
+Categories=Game;Network;Chat;
+MimeType=x-scheme-handler/jemcord;
+X-GNOME-UsesNotifications=true

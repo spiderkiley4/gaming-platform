@@ -24,7 +24,8 @@
     "files": [
       "dist/**/*",
       "../frontend/dist/**/*",
-      "assets/**/*"
+      "assets/**/*",
+      "build/**/*"
     ],
     "extraResources": [
       {
@@ -33,13 +34,20 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build",
+        "to": "build",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
-    "icon": "assets/jemcord.png",
+    "icon": "build/icons/512x512.png",
     "win": {
       "target": "nsis",
       "artifactName": "jemcord-Setup-${version}.${ext}",
-      "icon": "assets/jemcord.png"
+      "icon": "build/icons/512x512.png"
     },
     "linux": {
       "target": [
@@ -54,7 +62,8 @@
         "Comment": "Gaming Platform",
         "Categories": "Game;Network;Chat;",
         "MimeType": "x-scheme-handler/jemcord;",
-        "X-GNOME-UsesNotifications": "true"
+        "X-GNOME-UsesNotifications": "true",
+        "Icon": "jemcord"
       }
     },
     "publish": [

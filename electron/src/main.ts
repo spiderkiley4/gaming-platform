@@ -33,7 +33,7 @@ log.transports.file.level = 'debug';
 if (process.platform === 'win32') {
     app.setAppUserModelId(app.getName());
     app.setAsDefaultProtocolClient(app.getName());
-} else if (process.platform === 'linux') {
+} else if (process.platform === 'linux' && isPackagedApp) {
     const appRoot = path.join(__dirname, '..');
     // Use AppImage path if available, else fallback to electron binary
     const appPath = process.env.APPIMAGE || app.getPath('exe');
@@ -44,9 +44,10 @@ if (process.platform === 'win32') {
     const desktopFilePath = path.join(desktopDir, 'jemcord.desktop');
 
     const iconSrcCandidates = [
-    path.join(appRoot, 'assets', 'jemcord.png'),                // dev/build
-    path.join(appRoot, 'dist', 'frontend', 'jemcord.png'),      // some builds
-    path.join(appRoot, 'jemcord.png'),                          // AppImage root
+    path.join(appRoot, 'build', 'icons', '512x512.png'),       // packaged build icons
+    path.join(appRoot, 'assets', 'jemcord.png'),               // dev/build
+    path.join(appRoot, 'dist', 'frontend', 'jemcord.png'),     // some builds
+    path.join(appRoot, 'jemcord.png'),                         // AppImage root
 ];
 
 const iconSrc = iconSrcCandidates.find(fs.existsSync);
@@ -157,10 +158,11 @@ function createWindow() {
     // Resolve icon path for dev vs packaged
     const appRoot = path.join(__dirname, '..');
     const iconCandidates = [
-        path.join(appRoot, 'assets', 'jemcord.png'),          // packaged assets
-        path.join(appRoot, 'frontend', 'jemcord.png'),        // copied frontend asset (rare)
-        path.join(__dirname, '../assets/jemcord.png'),        // relative dev fallback
-        path.join(__dirname, '../jemcord.png')                // fallback if copied beside dist
+        path.join(appRoot, 'build', 'icons', '512x512.png'), // packaged build icons
+        path.join(appRoot, 'assets', 'jemcord.png'),         // packaged assets
+        path.join(appRoot, 'frontend', 'jemcord.png'),       // copied frontend asset (rare)
+        path.join(__dirname, '../assets/jemcord.png'),       // relative dev fallback
+        path.join(__dirname, '../jemcord.png')               // fallback if copied beside dist
     ];
     const iconPath = iconCandidates.find(fs.existsSync);
     const mainWindow = new BrowserWindow({
