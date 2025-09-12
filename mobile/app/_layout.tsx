@@ -119,14 +119,7 @@ function RootLayoutNav() {
           flex: 1,
           backgroundColor: backgroundColor
         }}>
-          <View
-            style={{
-              width: '100%',
-              height: 20,
-              backgroundColor: backgroundColor,
-            }}
-          />
-          <StatusBar style="auto" />
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
           <Slot />
         </View>
       </KeyboardAvoidingView>

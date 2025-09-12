@@ -95,6 +95,6 @@ export const createServerInvite = (serverId: number, options?: { max_uses?: numb
   api.post(`/api/servers/${serverId}/invites`, options);
 
 export const joinServerByInvite = (inviteCode: string) => 
-  api.post('/api/servers/join', { invite_code: inviteCode });
+  api.post(`/api/invites/${inviteCode}/join`);
 
 export default api;

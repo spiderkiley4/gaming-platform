@@ -33,9 +33,12 @@ export default function ServerList({ selectedServer, onServerSelect, onServerCre
   const successTextColor = useThemeColor({}, 'successText');
   const borderColor = useThemeColor({}, 'border');
   const cardColor = useThemeColor({}, 'card');
+  const cardSecondary = useThemeColor({}, 'cardSecondary');
   const backgroundColor = useThemeColor({}, 'background');
   const mutedColor = useThemeColor({}, 'muted');
   const mutedTextColor = useThemeColor({}, 'mutedText');
+  const textColor = useThemeColor({}, 'text');
+  const textMuted = useThemeColor({}, 'textMuted');
 
   useEffect(() => {
     fetchServers();
@@ -81,9 +84,10 @@ export default function ServerList({ selectedServer, onServerSelect, onServerCre
       setInviteCode('');
       setServers(prev => [server, ...prev.filter(s => s.id !== server.id)]);
       onServerSelect(server);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to join server. Check the code and try again.');
-      console.error(err);
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.error || 'Failed to join server. Check the code and try again.';
+      Alert.alert('Error', errorMessage);
+      console.error('Join server error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -99,7 +103,10 @@ export default function ServerList({ selectedServer, onServerSelect, onServerCre
       onPress={() => onServerSelect(item)}
     >
       {item.icon_url ? (
-        <Text style={styles.serverIcon}>🖼️</Text>
+        <Text style={[
+          styles.serverIcon, 
+          { color: selectedServer?.id === item.id ? primaryTextColor : textColor }
+        ]}>🖼️</Text>
       ) : (
         <View style={[styles.serverIconContainer, { backgroundColor: selectedServer?.id === item.id ? primaryTextColor : primaryColor }]}>
           <Text style={[styles.serverIconText, { color: selectedServer?.id === item.id ? primaryColor : primaryTextColor }]}>
@@ -108,9 +115,16 @@ export default function ServerList({ selectedServer, onServerSelect, onServerCre
         </View>
       )}
       <View style={styles.serverInfo}>
-        <ThemedText style={[styles.serverName, { color: primaryTextColor }]}>{item.name}</ThemedText>
+        <ThemedText style={[
+          styles.serverName,
+          selectedServer?.id === item.id && { color: primaryTextColor }
+        ]}>{item.name}</ThemedText>
         {item.description && (
-          <ThemedText style={[styles.serverDescription, { color: primaryTextColor, opacity: 0.8 }]} numberOfLines={1}>
+          <ThemedText style={[
+            styles.serverDescription, 
+            { color: textMuted },
+            selectedServer?.id === item.id && { color: primaryTextColor, opacity: 0.8 }
+          ]} numberOfLines={1}>
             {item.description}
           </ThemedText>
         )}
@@ -158,18 +172,18 @@ export default function ServerList({ selectedServer, onServerSelect, onServerCre
             <ThemedText type="title" style={styles.modalTitle}>Create Server</ThemedText>
             
             <TextInput
-              style={[styles.input, { backgroundColor: backgroundColor, borderColor: borderColor }]}
+              style={[styles.input, { backgroundColor: cardSecondary, color: textColor }]}
               placeholder="Server Name"
-              placeholderTextColor={mutedColor}
+              placeholderTextColor={textMuted}
               value={newServerName}
               onChangeText={setNewServerName}
               maxLength={100}
             />
             
             <TextInput
-              style={[styles.input, styles.textArea, { backgroundColor: backgroundColor, borderColor: borderColor }]}
+              style={[styles.input, styles.textArea, { backgroundColor: cardSecondary, color: textColor }]}
               placeholder="Description (Optional)"
-              placeholderTextColor={mutedColor}
+              placeholderTextColor={textMuted}
               value={newServerDescription}
               onChangeText={setNewServerDescription}
               multiline
@@ -212,9 +226,9 @@ export default function ServerList({ selectedServer, onServerSelect, onServerCre
             <ThemedText type="title" style={styles.modalTitle}>Join Server</ThemedText>
             
             <TextInput
-              style={[styles.input, { backgroundColor: backgroundColor, borderColor: borderColor }]}
+              style={[styles.input, { backgroundColor: cardSecondary, color: textColor }]}
               placeholder="Invite Code"
-              placeholderTextColor={mutedColor}
+              placeholderTextColor={textMuted}
               value={inviteCode}
               onChangeText={setInviteCode}
             />
@@ -333,7 +347,6 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: {
-    backgroundColor: '#1F2937',
     borderRadius: 12,
     padding: 20,
     width: '100%',
@@ -344,10 +357,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   input: {
-    backgroundColor: '#374151',
     padding: 12,
     borderRadius: 8,
-    color: 'white',
     marginBottom: 12,
   },
   textArea: {
@@ -364,12 +375,6 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#6B7280',
-  },
-  createButton: {
-    backgroundColor: '#3B82F6',
   },
   cancelButtonText: {
     fontWeight: '600',

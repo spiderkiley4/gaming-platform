@@ -214,8 +214,9 @@ export default function ServerList({ selectedServer, onServerSelect, onServerCre
                     setServers(prev => [server, ...prev.filter(s => s.id !== server.id)]);
                     onServerSelect(server);
                   } catch (err) {
-                    alert('Failed to join server. Check the code and try again.');
-                    console.error(err);
+                    const errorMessage = err.response?.data?.error || 'Failed to join server. Check the code and try again.';
+                    alert(errorMessage);
+                    console.error('Join server error:', err);
                   }
                 }}
                 disabled={!inviteCode.trim()}

@@ -1,5 +1,6 @@
 import { View, TextInput, TouchableOpacity, Alert, Image, ScrollView, Dimensions, Text } from 'react-native';
 import { useEffect, useState, useCallback } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { getServers } from '@/api';
 import ChatRoom from '@/components/Chatroom';
 import ServerList from '@/components/ServerList';
@@ -79,8 +80,9 @@ export default function TabOneScreen() {
   }
 
   return (
-    <ThemedView style={{ flex: 1 }}>
-      {/* User Profile Header */}
+    <SafeAreaView style={{ flex: 1, backgroundColor: backgroundColor }}>
+      <ThemedView style={{ flex: 1 }}>
+        {/* User Profile Header */}
       <ThemedView style={{ 
         flexDirection: 'row', 
         justifyContent: 'space-between', 
@@ -139,11 +141,6 @@ export default function TabOneScreen() {
             <ThemedText style={{ color: errorTextColor, fontSize: 14, fontWeight: '600' }}>Logout</ThemedText>
           </TouchableOpacity>
         </View>
-      </ThemedView>
-
-      {/* App Title */}
-      <ThemedView style={{ paddingVertical: 16, paddingHorizontal: 20, alignItems: 'center' }}>
-        <ThemedText type="title" style={{ fontSize: 28, fontWeight: 'bold' }}>Jemcord</ThemedText>
       </ThemedView>
 
       {/* Tabs */}
@@ -411,6 +408,7 @@ export default function TabOneScreen() {
           </TouchableOpacity>
         </View>
       )}
-    </ThemedView>
+      </ThemedView>
+    </SafeAreaView>
   );
 }
