@@ -11,22 +11,28 @@ interface PeerData {
   stream: MediaStream;
   username?: string;
   avatar?: string;
+  isScreenSharing?: boolean;
 }
 
 interface VoiceChatState {
   isMuted: boolean;
   isConnected: boolean;
+  isScreenSharing: boolean;
   peers: Map<string, PeerData>;
   startVoiceChat: () => Promise<void>;
   toggleMute: () => void;
   disconnect: () => void;
+  startScreenShare: () => Promise<void>;
+  stopScreenShare: () => void;
 }
 
 export const useVoiceChat = (channelId?: number, socket?: Socket | null) => {
   const [isMuted, setIsMuted] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [peers] = useState(new Map<string, PeerData>());
   const localStreamRef = useRef<MediaStream | null>(null);
+  const localScreenStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef(new Map<string, RTCPeerConnection>());
 
   const createPeerConnection = async (remoteUserId: string) => {
@@ -62,15 +68,26 @@ export const useVoiceChat = (channelId?: number, socket?: Socket | null) => {
       }
     };
 
+    // Add local audio stream tracks
     if (localStreamRef.current) {
-      console.log('Adding local stream tracks to peer connection');
+      console.log('Adding local audio stream tracks to peer connection');
       localStreamRef.current.getTracks().forEach((track) => {
         if (localStreamRef.current) {
           peerConnection.addTrack(track, localStreamRef.current);
         }
       });
     } else {
-      console.warn('No local stream available when creating peer connection');
+      console.warn('No local audio stream available when creating peer connection');
+    }
+
+    // Add local screen share tracks if available
+    if (localScreenStreamRef.current) {
+      console.log('Adding local screen share tracks to peer connection');
+      localScreenStreamRef.current.getTracks().forEach((track) => {
+        if (localScreenStreamRef.current) {
+          peerConnection.addTrack(track, localScreenStreamRef.current);
+        }
+      });
     }
 
     peerConnection.onicecandidate = (event) => {
@@ -84,13 +101,26 @@ export const useVoiceChat = (channelId?: number, socket?: Socket | null) => {
     };
 
     peerConnection.ontrack = (event) => {
-      console.log('Received remote track from', remoteUserId);
+      console.log('Received remote track', event.track.kind, 'from', remoteUserId);
       const [stream] = event.streams;
       if (stream) {
+        // Create separate streams for audio and video
+        const audioStream = new MediaStream();
+        const videoStream = new MediaStream();
+        
+        stream.getTracks().forEach(track => {
+          if (track.kind === 'audio') {
+            audioStream.addTrack(track);
+          } else if (track.kind === 'video') {
+            videoStream.addTrack(track);
+          }
+        });
+        
         // Update existing peer data or create new entry
         const existingPeer = peers.get(remoteUserId);
         peers.set(remoteUserId, { 
-          stream,
+          stream: audioStream, // Keep audio stream for audio playback
+          videoStream: videoStream.getVideoTracks().length > 0 ? videoStream : null, // Separate video stream
           username: existingPeer?.username || `User ${remoteUserId.slice(0, 4)}`,
           avatar: existingPeer?.avatar
         });
@@ -108,8 +138,15 @@ export const useVoiceChat = (channelId?: number, socket?: Socket | null) => {
     }
 
     try {
-      if (Platform.OS !== 'web') {
+      // Check if we're in a web environment (including mobile web browsers)
+      if (Platform.OS !== 'web' && typeof navigator === 'undefined') {
         console.warn('Voice chat is currently only supported on web');
+        return;
+      }
+
+      // Check if getUserMedia is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('getUserMedia is not available in this environment');
         return;
       }
 
@@ -154,6 +191,15 @@ export const useVoiceChat = (channelId?: number, socket?: Socket | null) => {
       localStreamRef.current = null;
     }
 
+    // Stop screen sharing if active
+    if (localScreenStreamRef.current) {
+      localScreenStreamRef.current.getTracks().forEach((track) => {
+        track.stop();
+      });
+      localScreenStreamRef.current = null;
+      setIsScreenSharing(false);
+    }
+
     peerConnectionsRef.current.forEach((connection) => {
       connection.close();
     });
@@ -165,6 +211,119 @@ export const useVoiceChat = (channelId?: number, socket?: Socket | null) => {
 
     if (socket) {
       socket.emit('voice_leave', { channelId });
+    }
+  };
+
+  const startScreenShare = async () => {
+    try {
+      // Check if we're in a web environment (including mobile web browsers)
+      if (Platform.OS !== 'web' && typeof navigator === 'undefined') {
+        console.warn('Screen sharing is currently only supported on web');
+        throw new Error('Screen sharing is only supported in web browsers');
+      }
+
+      // Check if getDisplayMedia is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        console.warn('getDisplayMedia is not available in this environment');
+        throw new Error('Screen sharing is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Edge.');
+      }
+
+      console.log('Requesting screen share access...');
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30 }
+        },
+        audio: false
+      });
+      
+      // Check if we actually got a video track
+      const videoTracks = screenStream.getVideoTracks();
+      if (videoTracks.length === 0) {
+        throw new Error('No video track received from screen share. Please try again.');
+      }
+      
+      console.log('Screen share access granted');
+      console.log('Got screen video tracks:', videoTracks.map(t => `${t.kind} (${t.readyState})`));
+      
+      localScreenStreamRef.current = screenStream;
+      setIsScreenSharing(true);
+      
+      // Add screen share tracks to existing peer connections
+      peerConnectionsRef.current.forEach((peerConnection, remoteUserId) => {
+        videoTracks.forEach((track) => {
+          peerConnection.addTrack(track, screenStream);
+          console.log('Added screen track to peer connection for:', remoteUserId);
+        });
+      });
+      
+      // Notify other users that we're sharing screen
+      if (socket && socket.connected) {
+        socket.emit('screen_share_start', { channelId });
+      }
+      
+      // Handle screen share end (when user stops sharing via browser UI)
+      videoTracks[0].onended = () => {
+        stopScreenShare();
+      };
+      
+    } catch (err) {
+      console.error('Error accessing screen share:', err);
+      
+      // Provide specific error messages based on the error type
+      let errorMessage = 'Error accessing screen share. ';
+      
+      if (err.name === 'NotAllowedError') {
+        errorMessage += 'Screen sharing permission was denied. Please allow screen sharing and try again.';
+      } else if (err.name === 'NotFoundError') {
+        errorMessage += 'No screen or window found to share. Please make sure you have something to share.';
+      } else if (err.name === 'NotSupportedError') {
+        errorMessage += 'Screen sharing is not supported in this browser. Please use Chrome, Firefox, or Edge.';
+      } else if (err.name === 'NotReadableError') {
+        errorMessage += 'Screen sharing is blocked by another application. Please close other screen sharing apps and try again.';
+      } else if (err.name === 'OverconstrainedError') {
+        errorMessage += 'Screen sharing constraints could not be satisfied. Please try with different settings.';
+      } else if (err.name === 'SecurityError') {
+        errorMessage += 'Screen sharing is not allowed due to security restrictions. Please check your browser settings.';
+      } else if (err.message) {
+        errorMessage += err.message;
+      } else {
+        errorMessage += 'Please check your permissions and try again.';
+      }
+      
+      throw new Error(errorMessage);
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (localScreenStreamRef.current) {
+      console.log('Stopping screen share');
+      
+      // Stop screen share tracks
+      localScreenStreamRef.current.getTracks().forEach((track) => {
+        track.stop();
+        console.log('Stopped screen track:', track.kind);
+      });
+      
+      // Remove screen share tracks from peer connections
+      peerConnectionsRef.current.forEach((peerConnection, remoteUserId) => {
+        const senders = peerConnection.getSenders();
+        senders.forEach((sender) => {
+          if (sender.track && sender.track.kind === 'video') {
+            peerConnection.removeTrack(sender);
+            console.log('Removed screen track from peer connection for:', remoteUserId);
+          }
+        });
+      });
+      
+      localScreenStreamRef.current = null;
+      setIsScreenSharing(false);
+      
+      // Notify other users that we stopped sharing screen
+      if (socket && socket.connected) {
+        socket.emit('screen_share_stop', { channelId });
+      }
     }
   };
 
@@ -274,12 +433,30 @@ export const useVoiceChat = (channelId?: number, socket?: Socket | null) => {
       peers.delete(socketId);
     };
 
+    const handleScreenShareStart = ({ socketId, userId, username }: { socketId: string, userId?: string, username?: string }) => {
+      console.log('User started screen sharing:', username || socketId);
+      const existingPeer = peers.get(socketId);
+      if (existingPeer) {
+        peers.set(socketId, { ...existingPeer, isScreenSharing: true });
+      }
+    };
+
+    const handleScreenShareStop = ({ socketId, userId, username }: { socketId: string, userId?: string, username?: string }) => {
+      console.log('User stopped screen sharing:', username || socketId);
+      const existingPeer = peers.get(socketId);
+      if (existingPeer) {
+        peers.set(socketId, { ...existingPeer, isScreenSharing: false });
+      }
+    };
+
     socket.on('voice_users', handleVoiceUsers);
     socket.on('user_joined_voice', handleUserJoined);
     socket.on('voice_offer', handleVoiceOffer);
     socket.on('voice_answer', handleVoiceAnswer);
     socket.on('relay_ice_candidate', handleIceCandidate);
     socket.on('user_left_voice', handleUserLeft);
+    socket.on('screen_share_start', handleScreenShareStart);
+    socket.on('screen_share_stop', handleScreenShareStop);
 
     return () => {
       socket.off('voice_users', handleVoiceUsers);
@@ -288,15 +465,20 @@ export const useVoiceChat = (channelId?: number, socket?: Socket | null) => {
       socket.off('voice_answer', handleVoiceAnswer);
       socket.off('relay_ice_candidate', handleIceCandidate);
       socket.off('user_left_voice', handleUserLeft);
+      socket.off('screen_share_start', handleScreenShareStart);
+      socket.off('screen_share_stop', handleScreenShareStop);
     };
   }, [socket, channelId]);
 
   return {
     isMuted,
     isConnected,
+    isScreenSharing,
     peers,
     startVoiceChat,
     toggleMute,
     disconnect,
+    startScreenShare,
+    stopScreenShare,
   };
 };

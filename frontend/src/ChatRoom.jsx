@@ -20,7 +20,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
   const socket = getSocket();
-  const { isMuted, isConnected, isSpeaking, peers, startVoiceChat, toggleMute, disconnect, setPeerVolume } = useVoiceChat(channelId, socket);
+  const { isMuted, isConnected, isSpeaking, isScreenSharing, peers, startVoiceChat, toggleMute, disconnect, startScreenShare, stopScreenShare, setPeerVolume } = useVoiceChat(channelId, socket);
 
   // Get all online users for mention suggestions
   const [users, setUsers] = useState([]);
@@ -368,6 +368,25 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                 {isMuted ? 'Unmute' : 'Mute'}
               </button>
             )}
+            {isConnected && (
+              <button
+                onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+                className={`p-2 rounded text-white ${
+                  isScreenSharing ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-500 hover:bg-purple-600'
+                }`}
+                title={isScreenSharing ? 'Stop Screen Share' : 'Start Screen Share'}
+              >
+                {isScreenSharing ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
@@ -449,6 +468,35 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                       />
                       <span className="w-12 text-right">{Math.round((peer.volume ?? 1) * 100)}%</span>
                     </div>
+                    {peer.isScreenSharing && (
+                      <div className="mt-2">
+                        <div className="flex items-center gap-2 text-xs text-purple-400 mb-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          Screen Sharing
+                        </div>
+                        {peer.videoStream && (
+                          <div className="relative bg-black rounded overflow-hidden">
+                            <video
+                              ref={(videoElement) => {
+                                if (videoElement && peer.videoStream) {
+                                  videoElement.srcObject = peer.videoStream;
+                                  videoElement.play().catch(console.error);
+                                }
+                              }}
+                              className="w-full h-32 object-contain"
+                              autoPlay
+                              muted
+                              playsInline
+                            />
+                            <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                              {displayUsername}'s Screen
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );

@@ -881,6 +881,27 @@ io.on('connection', async (socket) => {
     });
   });
 
+  // Screen sharing events
+  socket.on('screen_share_start', ({ channelId }) => {
+    console.log(`User ${socket.user.username} (${socket.id}) started screen sharing in channel ${channelId}`);
+    const voiceRoom = `voice-${channelId}`;
+    socket.to(voiceRoom).emit('screen_share_start', {
+      socketId: socket.id,
+      userId: socket.user.id,
+      username: socket.user.username
+    });
+  });
+
+  socket.on('screen_share_stop', ({ channelId }) => {
+    console.log(`User ${socket.user.username} (${socket.id}) stopped screen sharing in channel ${channelId}`);
+    const voiceRoom = `voice-${channelId}`;
+    socket.to(voiceRoom).emit('screen_share_stop', {
+      socketId: socket.id,
+      userId: socket.user.id,
+      username: socket.user.username
+    });
+  });
+
   socket.on('disconnecting', () => {
     const rooms = socket.rooms;
     rooms.forEach((room) => {

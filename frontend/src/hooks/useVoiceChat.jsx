@@ -5,6 +5,7 @@ export function useVoiceChat(channelId, socket) {
   const [isConnected, setIsConnected] = useState(false);
   const [peers, setPeers] = useState(new Map());
   const localStreamRef = useRef(null);
+  const localScreenStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map());
   const audioElementsRef = useRef(new Map());
   const pendingAnswersRef = useRef(new Map());
@@ -12,6 +13,7 @@ export function useVoiceChat(channelId, socket) {
   const volumesRef = useRef(new Map()); // remoteUserId -> volume (0.0 - 1.0)
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [localLevel, setLocalLevel] = useState(0);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const levelRafRef = useRef(null);
@@ -376,14 +378,22 @@ export function useVoiceChat(channelId, socket) {
       }
     };
 
-    // Only set up negotiation if we have a local stream
+    // Add local audio stream tracks
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
-        console.log('Adding track to peer connection', track.kind);
+        console.log('Adding audio track to peer connection', track.kind);
         peerConnection.addTrack(track, localStreamRef.current);
       });
     } else {
-      console.warn('No local stream available when creating peer connection');
+      console.warn('No local audio stream available when creating peer connection');
+    }
+
+    // Add local screen share tracks if available
+    if (localScreenStreamRef.current) {
+      localScreenStreamRef.current.getTracks().forEach((track) => {
+        console.log('Adding screen track to peer connection', track.kind);
+        peerConnection.addTrack(track, localScreenStreamRef.current);
+      });
     }
 
     peerConnection.onicecandidate = (event) => {
@@ -405,9 +415,23 @@ export function useVoiceChat(channelId, socket) {
         setPeers((prevPeers) => {
           const newPeers = new Map(prevPeers);
           const existingPeer = newPeers.get(remoteUserId);
+          
+          // Create separate streams for audio and video
+          const audioStream = new MediaStream();
+          const videoStream = new MediaStream();
+          
+          stream.getTracks().forEach(track => {
+            if (track.kind === 'audio') {
+              audioStream.addTrack(track);
+            } else if (track.kind === 'video') {
+              videoStream.addTrack(track);
+            }
+          });
+          
           newPeers.set(remoteUserId, {
             ...existingPeer,
-            stream,
+            stream: audioStream, // Keep audio stream for audio playback
+            videoStream: videoStream.getVideoTracks().length > 0 ? videoStream : null, // Separate video stream
             username: existingPeer?.username || `User ${remoteUserId.slice(0, 4)}`,
             avatar_url: existingPeer?.avatar_url,
             userId: existingPeer?.userId,
@@ -427,10 +451,14 @@ export function useVoiceChat(channelId, socket) {
           audioElement.addEventListener('error', (e) => console.error('Audio element error:', e));
           audioElementsRef.current.set(remoteUserId, audioElement);
         }
-        audioElement.srcObject = stream;
+        
+        // Create audio-only stream for audio element
+        const audioStream = new MediaStream();
+        stream.getAudioTracks().forEach(track => audioStream.addTrack(track));
+        audioElement.srcObject = audioStream;
         
         // Setup analyser + gain playback for remote speaking detection and volume control
-        setupRemoteAnalyser(remoteUserId, stream);
+        setupRemoteAnalyser(remoteUserId, audioStream);
       }
     };
 
@@ -519,6 +547,16 @@ export function useVoiceChat(channelId, socket) {
     });
     localStreamRef.current = null;
 
+    // Stop screen sharing if active
+    if (localScreenStreamRef.current) {
+      localScreenStreamRef.current.getTracks().forEach((track) => {
+        track.stop();
+        console.log('Stopped screen track:', track.kind);
+      });
+      localScreenStreamRef.current = null;
+      setIsScreenSharing(false);
+    }
+
     teardownLocalAnalyser();
     teardownAllRemoteAnalysers();
 
@@ -531,6 +569,180 @@ export function useVoiceChat(channelId, socket) {
     // Leave the voice channel
     if (socket && socket.connected) {
       socket.emit('voice_leave', { channelId });
+    }
+  };
+
+  const startScreenShare = async () => {
+    try {
+      console.log('Requesting screen share access...');
+      
+      // Check if we're in Electron
+      const isElectron = typeof window !== 'undefined' && window.electronAPI;
+      
+      let screenStream;
+      
+      if (isElectron) {
+        try {
+          console.log('Detected Electron environment, using Electron screen capture');
+          
+          // Get screen sources from Electron main process via secure API
+          const sources = await window.electronAPI.getScreenSources();
+          
+          console.log('Available screen sources:', sources);
+          
+          if (sources.length === 0) {
+            throw new Error('No screen sources available. Make sure you have windows or screens to share.');
+          }
+          
+          // Use the first available source
+          const source = sources[0];
+          console.log('Using screen source:', source.name, 'with ID:', source.id);
+          
+          screenStream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+                chromeMediaSourceId: source.id,
+                minWidth: 1280,
+                maxWidth: 1920,
+                minHeight: 720,
+                maxHeight: 1080
+              }
+            }
+          });
+        } catch (electronErr) {
+          console.error('Electron screen capture error:', electronErr);
+          
+          // Try fallback to getDisplayMedia if available
+          if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+            console.log('Falling back to getDisplayMedia API');
+            screenStream = await navigator.mediaDevices.getDisplayMedia({
+              video: {
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 30 }
+              },
+              audio: false
+            });
+          } else {
+            throw new Error('Failed to access screen in Electron. Please check your screen sharing permissions and try again.');
+          }
+        }
+      } else {
+        // Check if screen sharing is supported in web browsers
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+          throw new Error('Screen sharing is not supported in this browser. Please use a modern browser like Chrome, Firefox, or Edge.');
+        }
+        
+        // Use getDisplayMedia API for web browsers
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30 }
+          },
+          audio: false
+        });
+      }
+      
+      // Check if we actually got a video track
+      const videoTracks = screenStream.getVideoTracks();
+      if (videoTracks.length === 0) {
+        throw new Error('No video track received from screen share. Please try again.');
+      }
+      
+      console.log('Screen share access granted');
+      console.log('Got screen video tracks:', videoTracks.map(t => `${t.kind} (${t.readyState})`));
+      
+      localScreenStreamRef.current = screenStream;
+      setIsScreenSharing(true);
+      
+      // Add screen share tracks to existing peer connections
+      peerConnectionsRef.current.forEach((peerConnection, remoteUserId) => {
+        videoTracks.forEach((track) => {
+          peerConnection.addTrack(track, screenStream);
+          console.log('Added screen track to peer connection for:', remoteUserId);
+        });
+      });
+      
+      // Notify other users that we're sharing screen
+      if (socket && socket.connected) {
+        socket.emit('screen_share_start', { channelId });
+      }
+      
+      // Handle screen share end (when user stops sharing via browser UI)
+      videoTracks[0].onended = () => {
+        stopScreenShare();
+      };
+      
+    } catch (err) {
+      console.error('Error accessing screen share:', err);
+      
+      // Provide specific error messages based on the error type
+      let errorMessage = 'Error accessing screen share. ';
+      
+      if (err.name === 'NotAllowedError') {
+        errorMessage += 'Screen sharing permission was denied. Please allow screen sharing and try again.';
+      } else if (err.name === 'NotFoundError') {
+        errorMessage += 'No screen or window found to share. Please make sure you have something to share.';
+      } else if (err.name === 'NotSupportedError') {
+        errorMessage += 'Screen sharing is not supported in this browser. Please use Chrome, Firefox, or Edge.';
+      } else if (err.name === 'NotReadableError') {
+        errorMessage += 'Screen sharing is blocked by another application. Please close other screen sharing apps and try again.';
+      } else if (err.name === 'OverconstrainedError') {
+        errorMessage += 'Screen sharing constraints could not be satisfied. Please try with different settings.';
+      } else if (err.name === 'SecurityError') {
+        errorMessage += 'Screen sharing is not allowed due to security restrictions. Please check your browser settings.';
+      } else if (err.name === 'AbortError') {
+        errorMessage += 'Screen sharing was cancelled by the user.';
+      } else if (err.name === 'TypeError') {
+        errorMessage += 'Screen sharing API is not available. Please check if you are running in a supported environment.';
+      } else if (err.message) {
+        // Check for specific Electron-related errors
+        if (err.message.includes('get-screen-sources')) {
+          errorMessage += 'Failed to get screen sources from Electron. Please restart the application and try again.';
+        } else if (err.message.includes('chromeMediaSource')) {
+          errorMessage += 'Electron screen capture failed. Please check your system permissions and try again.';
+        } else {
+          errorMessage += err.message;
+        }
+      } else {
+        errorMessage += 'Please check your permissions and try again.';
+      }
+      
+      alert(errorMessage);
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (localScreenStreamRef.current) {
+      console.log('Stopping screen share');
+      
+      // Stop screen share tracks
+      localScreenStreamRef.current.getTracks().forEach((track) => {
+        track.stop();
+        console.log('Stopped screen track:', track.kind);
+      });
+      
+      // Remove screen share tracks from peer connections
+      peerConnectionsRef.current.forEach((peerConnection, remoteUserId) => {
+        const senders = peerConnection.getSenders();
+        senders.forEach((sender) => {
+          if (sender.track && sender.track.kind === 'video') {
+            peerConnection.removeTrack(sender);
+            console.log('Removed screen track from peer connection for:', remoteUserId);
+          }
+        });
+      });
+      
+      localScreenStreamRef.current = null;
+      setIsScreenSharing(false);
+      
+      // Notify other users that we stopped sharing screen
+      if (socket && socket.connected) {
+        socket.emit('screen_share_stop', { channelId });
+      }
     }
   };
 
@@ -762,6 +974,30 @@ export function useVoiceChat(channelId, socket) {
       });
     };
 
+    const handleScreenShareStart = ({ socketId, userId, username }) => {
+      console.log('User started screen sharing:', username || socketId);
+      setPeers((prevPeers) => {
+        const newPeers = new Map(prevPeers);
+        const existingPeer = newPeers.get(socketId);
+        if (existingPeer) {
+          newPeers.set(socketId, { ...existingPeer, isScreenSharing: true });
+        }
+        return newPeers;
+      });
+    };
+
+    const handleScreenShareStop = ({ socketId, userId, username }) => {
+      console.log('User stopped screen sharing:', username || socketId);
+      setPeers((prevPeers) => {
+        const newPeers = new Map(prevPeers);
+        const existingPeer = newPeers.get(socketId);
+        if (existingPeer) {
+          newPeers.set(socketId, { ...existingPeer, isScreenSharing: false });
+        }
+        return newPeers;
+      });
+    };
+
     socket.on('voice_users', handleExistingUsers);
     socket.on('user_joined_voice', handleUserJoined);
     socket.on('user_voice_mute', handleUserVoiceMute);
@@ -769,6 +1005,8 @@ export function useVoiceChat(channelId, socket) {
     socket.on('voice_answer', handleVoiceAnswer);
     socket.on('relay_ice_candidate', handleIceCandidate);
     socket.on('user_left_voice', handleUserLeft);
+    socket.on('screen_share_start', handleScreenShareStart);
+    socket.on('screen_share_stop', handleScreenShareStop);
 
     return () => {
       socket.off('voice_users', handleExistingUsers);
@@ -778,6 +1016,8 @@ export function useVoiceChat(channelId, socket) {
       socket.off('voice_answer', handleVoiceAnswer);
       socket.off('relay_ice_candidate', handleIceCandidate);
       socket.off('user_left_voice', handleUserLeft);
+      socket.off('screen_share_start', handleScreenShareStart);
+      socket.off('screen_share_stop', handleScreenShareStop);
       socket.io.off("reconnect", handleReconnect);
     };
   }, [socket, channelId, isConnected]);
@@ -794,10 +1034,13 @@ export function useVoiceChat(channelId, socket) {
     isConnected,
     isSpeaking,
     localLevel,
+    isScreenSharing,
     peers,
     startVoiceChat,
     toggleMute,
     disconnect,
+    startScreenShare,
+    stopScreenShare,
     setPeerVolume: (remoteUserId, volume) => {
       try {
         // Accept up to 5.0 (500%)

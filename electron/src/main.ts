@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Notification, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, Notification, ipcMain, desktopCapturer } from 'electron';
 import * as path from 'path';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
@@ -171,8 +171,12 @@ function createWindow() {
         icon: iconPath,
         autoHideMenuBar: true,
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true,
+            webSecurity: true,
+            allowRunningInsecureContent: false,
+            experimentalFeatures: true,
+            preload: path.join(__dirname, 'preload.js')
         }
     });
 
@@ -229,6 +233,25 @@ function createWindow() {
     ipcMain.handle('get-running-games', async () => {
         return await getRunningGames();
     });
+
+    // Add IPC handler for screen sharing
+    ipcMain.handle('get-screen-sources', async () => {
+        try {
+            const sources = await desktopCapturer.getSources({
+                types: ['screen', 'window'],
+                thumbnailSize: { width: 150, height: 150 }
+            });
+            return sources.map(source => ({
+                id: source.id,
+                name: source.name,
+                thumbnail: source.thumbnail.toDataURL()
+            }));
+        } catch (error) {
+            console.error('Error getting screen sources:', error);
+            throw error;
+        }
+    });
+
 
     // In development, load from React dev server
     if (isDev) {
