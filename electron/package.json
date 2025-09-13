@@ -1,6 +1,6 @@
 {
   "name": "jemcord",
-  "version": "1.0.13",
+  "version": "1.0.12",
   "description": "Electron Application",
   "main": "dist/main.js",
   "scripts": {

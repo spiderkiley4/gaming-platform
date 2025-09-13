@@ -10,11 +10,34 @@ import ServerList from './components/ServerList';
 import ServerChannels from './components/ServerChannels';
 import ServerMembers from './components/ServerMembers';
 import { resolveAvatarUrl } from './utils/mediaUrl';
+import { useVoiceChat } from './hooks/useVoiceChat';
+import UserBar from './components/UserBar';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import CustomThemeEditor from './components/CustomThemeEditor';
+import './styles/themes.css';
 
-export default function App() {
+function AppContent() {
   const { user, logout, setUser } = useAuth();
+  const { currentTheme, isCustomTheme, switchTheme, getAvailableThemes } = useTheme();
   
   console.log('[App] Current user state:', user);
+  
+  // Suppress DTLS transport console errors
+  useEffect(() => {
+    const originalError = console.error;
+    console.error = (...args) => {
+      const message = args[0]?.toString() || '';
+      if (message.includes('DtlsTransport') && message.includes('Received non-DTLS packet')) {
+        // Suppress this specific error as it's expected during WebRTC connection establishment
+        return;
+      }
+      originalError.apply(console, args);
+    };
+
+    return () => {
+      console.error = originalError;
+    };
+  }, []);
   
   // Debug re-renders
   useEffect(() => {
@@ -36,9 +59,16 @@ export default function App() {
   const [isMinimized, setIsMinimized] = useState(false);
   const [userPresence, setUserPresence] = useState(null);
   const [showProfileSettings, setShowProfileSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showCustomThemeEditor, setShowCustomThemeEditor] = useState(false);
   const [customStatus, setCustomStatus] = useState('');
   
   const socket = getSocket();
+  
+  // Voice chat state - only active when in a voice channel
+  const currentVoiceChannelId = selectedChannel?.type === 'voice' ? selectedChannel.id : null;
+  const isVoicePreview = selectedChannel?.preview === true;
+  const voiceChat = useVoiceChat(currentVoiceChannelId, socket, isVoicePreview);
 
   // Add presence update function
   const updatePresence = (presence) => {
@@ -382,6 +412,415 @@ export default function App() {
     );
   };
 
+  // Settings Modal Component
+  const SettingsModal = () => {
+    const [mediaPermissions, setMediaPermissions] = useState({
+      microphone: 'unknown',
+      camera: 'unknown',
+      screenShare: 'unknown'
+    });
+
+    // Check media permissions when settings modal opens
+    useEffect(() => {
+      if (showSettings) {
+        checkMediaPermissions();
+      }
+    }, [showSettings]);
+
+    const checkMediaPermissions = async () => {
+      try {
+        // Check microphone permission
+        const micPermission = await navigator.permissions.query({ name: 'microphone' });
+        setMediaPermissions(prev => ({ ...prev, microphone: micPermission.state }));
+
+        // Check camera permission
+        const cameraPermission = await navigator.permissions.query({ name: 'camera' });
+        setMediaPermissions(prev => ({ ...prev, camera: cameraPermission.state }));
+
+        // For screen share, we can't directly check permissions, but we can test if the API is available
+        if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+          setMediaPermissions(prev => ({ ...prev, screenShare: 'granted' }));
+        } else {
+          setMediaPermissions(prev => ({ ...prev, screenShare: 'denied' }));
+        }
+      } catch (error) {
+        console.log('Error checking media permissions:', error);
+        // Fallback: try to access media devices to determine availability
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const hasMic = devices.some(device => device.kind === 'audioinput');
+          const hasCamera = devices.some(device => device.kind === 'videoinput');
+          
+          setMediaPermissions(prev => ({
+            ...prev,
+            microphone: hasMic ? 'granted' : 'denied',
+            camera: hasCamera ? 'granted' : 'denied'
+          }));
+        } catch (deviceError) {
+          console.log('Error enumerating devices:', deviceError);
+        }
+      }
+    };
+
+    const getPermissionStatus = (permission) => {
+      switch (permission) {
+        case 'granted':
+          return { color: 'bg-green-500', text: 'Available', textColor: 'text-green-400' };
+        case 'denied':
+          return { color: 'bg-red-500', text: 'Blocked', textColor: 'text-red-400' };
+        case 'prompt':
+          return { color: 'bg-yellow-500', text: 'Ask Permission', textColor: 'text-yellow-400' };
+        default:
+          return { color: 'bg-gray-500', text: 'Unknown', textColor: 'text-gray-400' };
+      }
+    };
+
+    const requestMicrophonePermission = async () => {
+      console.log('Requesting microphone permission...');
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('getUserMedia is not supported in this browser');
+        }
+        
+        // First, check if audio devices are available
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioDevices = devices.filter(device => device.kind === 'audioinput');
+        
+        if (audioDevices.length === 0) {
+          throw new Error('No microphone devices found. Please check if a microphone is connected.');
+        }
+        
+        console.log('Found audio devices:', audioDevices.length);
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('Microphone permission granted, stream received:', stream);
+        
+        // Stop the stream immediately as we just needed to trigger the permission
+        stream.getTracks().forEach(track => {
+          track.stop();
+          console.log('Stopped track:', track.kind);
+        });
+        
+        // Recheck permissions after request
+        await checkMediaPermissions();
+        console.log('Permissions rechecked after microphone request');
+      } catch (error) {
+        console.error('Microphone permission error:', error);
+        console.log('Error name:', error.name);
+        console.log('Error message:', error.message);
+        
+        // Provide specific error messages based on error type
+        if (error.name === 'NotFoundError' || error.message.includes('object can not be found')) {
+          console.log('Microphone device not found - may be in use by another application');
+          alert('Microphone not found. Please check if:\n• A microphone is connected\n• No other application is using the microphone\n• Microphone drivers are properly installed');
+        } else if (error.name === 'NotAllowedError') {
+          console.log('Microphone permission denied by user');
+          alert('Microphone permission was denied. Please allow microphone access in your browser settings.');
+        } else if (error.name === 'NotReadableError') {
+          console.log('Microphone is being used by another application');
+          alert('Microphone is currently being used by another application. Please close other applications that might be using the microphone.');
+        } else {
+          console.log('Unknown microphone error:', error);
+          alert(`Microphone error: ${error.message || 'Unknown error occurred'}`);
+        }
+        
+        // Recheck permissions even on error to update the UI
+        await checkMediaPermissions();
+      }
+    };
+
+    const requestCameraPermission = async () => {
+      console.log('Requesting camera permission...');
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('getUserMedia is not supported in this browser');
+        }
+        
+        // First, check if camera devices are available
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        if (videoDevices.length === 0) {
+          throw new Error('No camera devices found. Please check if a camera is connected.');
+        }
+        
+        console.log('Found video devices:', videoDevices.length);
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          } 
+        });
+        console.log('Camera permission granted, stream received:', stream);
+        
+        // Stop the stream immediately as we just needed to trigger the permission
+        stream.getTracks().forEach(track => {
+          track.stop();
+          console.log('Stopped track:', track.kind);
+        });
+        
+        // Recheck permissions after request
+        await checkMediaPermissions();
+        console.log('Permissions rechecked after camera request');
+      } catch (error) {
+        console.error('Camera permission error:', error);
+        console.log('Error name:', error.name);
+        console.log('Error message:', error.message);
+        
+        // Provide specific error messages based on error type
+        if (error.name === 'NotFoundError' || error.message.includes('object can not be found')) {
+          console.log('Camera device not found - may be in use by another application');
+          alert('Camera not found. Please check if:\n• A camera is connected\n• No other application is using the camera\n• Camera drivers are properly installed');
+        } else if (error.name === 'NotAllowedError') {
+          console.log('Camera permission denied by user');
+          alert('Camera permission was denied. Please allow camera access in your browser settings.');
+        } else if (error.name === 'NotReadableError') {
+          console.log('Camera is being used by another application');
+          alert('Camera is currently being used by another application. Please close other applications that might be using the camera.');
+        } else if (error.name === 'OverconstrainedError') {
+          console.log('Camera constraints cannot be satisfied');
+          alert('Camera does not support the requested settings. Trying with basic settings...');
+          // Try again with basic constraints
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            stream.getTracks().forEach(track => track.stop());
+            await checkMediaPermissions();
+            return;
+          } catch (retryError) {
+            console.error('Retry with basic constraints failed:', retryError);
+          }
+        } else {
+          console.log('Unknown camera error:', error);
+          alert(`Camera error: ${error.message || 'Unknown error occurred'}`);
+        }
+        
+        // Recheck permissions even on error to update the UI
+        await checkMediaPermissions();
+      }
+    };
+
+    if (!showSettings) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-overlay backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="bg-surface/90 backdrop-blur-md w-full h-full max-w-4xl max-h-[90vh] rounded-lg border border-outline flex flex-col">
+          {/* Settings Header */}
+          <div className="p-6 border-b border-outline">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-on-surface">Settings</h2>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="p-2 hover:bg-hover rounded-lg transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-on-surface-variant" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Settings Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="space-y-8">
+              {/* User Profile Section */}
+              <div>
+                <h3 className="text-lg font-semibold text-on-surface mb-4">User Profile</h3>
+                <div className="bg-surface-variant/50 rounded-lg p-4">
+                  <div className="flex items-center gap-4">
+                    {user.avatar_url ? (
+                      <img 
+                        src={resolveAvatarUrl(user.avatar_url)} 
+                        alt={user.username} 
+                        className="w-16 h-16 rounded-full"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
+                        <span className="text-on-secondary text-xl font-medium">
+                          {user.username.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    <div>
+                      <h4 className="text-on-surface font-medium text-lg">{user.username}</h4>
+                      <p className="text-on-surface-variant">User ID: {user.id}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Voice & Video Settings */}
+              <div>
+                <h3 className="text-lg font-semibold text-on-surface mb-4">Voice & Video</h3>
+                <div className="bg-surface-variant/50 rounded-lg p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface">Microphone</span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 ${getPermissionStatus(mediaPermissions.microphone).color} rounded-full`}></div>
+                        <span className={`${getPermissionStatus(mediaPermissions.microphone).textColor} text-sm`}>
+                          {getPermissionStatus(mediaPermissions.microphone).text}
+                        </span>
+                      </div>
+                      {mediaPermissions.microphone !== 'granted' && (
+                        <button
+                          onClick={() => {
+                            console.log('Microphone request button clicked');
+                            requestMicrophonePermission();
+                          }}
+                          className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
+                        >
+                          Request
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface">Camera</span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 ${getPermissionStatus(mediaPermissions.camera).color} rounded-full`}></div>
+                        <span className={`${getPermissionStatus(mediaPermissions.camera).textColor} text-sm`}>
+                          {getPermissionStatus(mediaPermissions.camera).text}
+                        </span>
+                      </div>
+                      {mediaPermissions.camera !== 'granted' && (
+                        <button
+                          onClick={() => {
+                            console.log('Camera request button clicked');
+                            requestCameraPermission();
+                          }}
+                          className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
+                        >
+                          Request
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface">Screen Share</span>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 ${getPermissionStatus(mediaPermissions.screenShare).color} rounded-full`}></div>
+                      <span className={`${getPermissionStatus(mediaPermissions.screenShare).textColor} text-sm`}>
+                        {getPermissionStatus(mediaPermissions.screenShare).text}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Appearance Settings */}
+              <div>
+                <h3 className="text-lg font-semibold text-on-surface mb-4">Appearance</h3>
+                <div className="bg-surface-variant/50 rounded-lg p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface">Theme</span>
+                    <div className="flex items-center gap-2">
+                      <select 
+                        value={isCustomTheme ? 'custom' : currentTheme}
+                        onChange={(e) => {
+                          if (e.target.value === 'custom') {
+                            setShowCustomThemeEditor(true);
+                          } else {
+                            switchTheme(e.target.value);
+                          }
+                        }}
+                        className="bg-secondary text-on-secondary px-3 py-1 rounded"
+                      >
+                        {getAvailableThemes().map(theme => (
+                          <option key={theme.key} value={theme.key}>
+                            {theme.name}
+                          </option>
+                        ))}
+                        <option value="custom">Custom</option>
+                      </select>
+                      {isCustomTheme && (
+                        <button
+                          onClick={() => setShowCustomThemeEditor(true)}
+                          className="px-2 py-1 bg-primary hover:bg-primary-container text-on-primary text-xs rounded transition-colors"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface">Font Size</span>
+                    <select className="bg-secondary text-on-secondary px-3 py-1 rounded">
+                      <option>Small</option>
+                      <option>Medium</option>
+                      <option>Large</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notifications Settings */}
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-4">Notifications</h3>
+                <div className="bg-gray-700/50 rounded-lg p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-300">Desktop Notifications</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-300">Sound Notifications</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Advanced Settings */}
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-4">Advanced</h3>
+                <div className="bg-gray-700/50 rounded-lg p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-300">Developer Mode</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" />
+                      <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-300">Hardware Acceleration</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Settings Footer */}
+          <div className="p-6 border-t border-gray-700">
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Update status display component
   const renderUserStatus = (user) => {
     if (user.presence) {
@@ -418,55 +857,40 @@ export default function App() {
   };
 
   return (
-    <div className="p-4 text-white bg-gray-900 min-h-screen relative overflow-hidden">
+    <div className="p-4 text-on-background bg-background min-h-screen relative overflow-hidden">
       {/* User Profile & Status */}
       <div className="absolute top-4 right-4 flex items-center gap-4">
-        <div 
-          className="flex items-center gap-2 relative group cursor-pointer"
-          onClick={() => setShowProfileSettings(true)}
-        >
-          <div className="relative">
-            {user.avatar_url ? (
-              <img 
-                src={resolveAvatarUrl(user.avatar_url)} 
-                alt={user.username} 
-                className="w-8 h-8 rounded-full group-hover:opacity-80 transition-opacity"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center group-hover:bg-gray-500 transition-colors">
-                {user.username.charAt(0).toUpperCase()}
-              </div>
-            )}
-          </div>
-          <span className="text-gray-300">{user.username}</span>
-        </div>
         <div className={`px-2 py-1 rounded text-sm ${
-          isConnected ? 'bg-green-500' : 'bg-red-500'
+          isConnected ? 'bg-success text-on-background' : 'bg-error text-on-background'
         }`}>
           {isConnected ? 'Connected' : 'Disconnected'}
         </div>
         <button
           onClick={logout}
-          className="px-2 py-1 bg-red-500 rounded hover:bg-red-600"
+          className="px-2 py-1 bg-error rounded hover:bg-hover text-on-background"
         >
           Logout
         </button>
       </div>
 
       <ProfileSettingsModal />
+      <SettingsModal />
+      {showCustomThemeEditor && (
+        <CustomThemeEditor onClose={() => setShowCustomThemeEditor(false)} />
+      )}
 
       <div className="flex flex-col flex-grow">
         <div>
-          <h1 className="text-3xl font-bold mb-4">Jemcord</h1>
+          <h1 className="text-3xl font-bold mb-4 text-on-background">Jemcord</h1>
           
           
           {/* Tabs */}
-          <div className="flex justify-center mb-4 border-b border-gray-700">
+          <div className="flex justify-center mb-4 border-b border-outline">
             <button
               className={`px-4 py-2 ${
                 activeTab === 'servers'
-                  ? 'border-b-2 border-blue-500 text-blue-500'
-                  : 'text-gray-400 hover:text-gray-200'
+                  ? 'border-b-2 border-primary text-primary'
+                  : 'text-on-surface-variant hover:text-on-surface'
               }`}
               onClick={() => setActiveTab('servers')}
             >
@@ -475,8 +899,8 @@ export default function App() {
             <button
               className={`px-4 py-2 ${
                 activeTab === 'friends'
-                  ? 'border-b-2 border-blue-500 text-blue-500'
-                  : 'text-gray-400 hover:text-gray-200'
+                  ? 'border-b-2 border-primary text-primary'
+                  : 'text-on-surface-variant hover:text-on-surface'
               }`}
               onClick={() => setActiveTab('friends')}
             >
@@ -485,8 +909,8 @@ export default function App() {
             <button
               className={`px-4 py-2 ${
                 activeTab === 'nitro'
-                  ? 'border-b-2 border-blue-500 text-blue-500'
-                  : 'text-gray-400 hover:text-gray-200'
+                  ? 'border-b-2 border-primary text-primary'
+                  : 'text-on-surface-variant hover:text-on-surface'
               }`}
               onClick={() => setActiveTab('nitro')}
             >
@@ -497,49 +921,60 @@ export default function App() {
 
         <div className="flex h-[calc(100vh-140px)]">
           {/* Left sidebar - Servers and Channels */}
-          <div className="flex h-[calc(100vh-140px)]">
-            {/* Server List */}
-            {activeTab === 'servers' && (
-              <ServerList
-                selectedServer={selectedServer}
-                onServerSelect={(server) => {
-                  setSelectedServer(server);
-                  setSelectedChannel(null);
-                }}
-                onServerCreate={(server) => {
-                  setSelectedServer(server);
-                }}
-              />
-            )}
+          <div className="flex flex-col h-[calc(100vh-140px)]">
+            {/* Top section - Server List and Channels */}
+            <div className="flex flex-1">
+              {/* Server List */}
+              {activeTab === 'servers' && (
+                <ServerList
+                  selectedServer={selectedServer}
+                  onServerSelect={(server) => {
+                    setSelectedServer(server);
+                    setSelectedChannel(null);
+                  }}
+                  onServerCreate={(server) => {
+                    setSelectedServer(server);
+                  }}
+                />
+              )}
 
-            {/* Server Channels */}
-            {activeTab === 'servers' && selectedServer && (
-              <ServerChannels
-                selectedServer={selectedServer}
-                selectedChannel={selectedChannel}
-                onChannelSelect={(channel) => {
-                  setSelectedChannel(channel);
-                  // Clear unread and mentions when selecting channel
-                  setUnreadMessages(prev => {
-                    const newMap = new Map(prev);
-                    newMap.delete(channel.id);
-                    return newMap;
-                  });
-                  setMentions(prev => {
-                    const newMap = new Map(prev);
-                    newMap.delete(channel.id);
-                    return newMap;
-                  });
-                }}
-                onChannelCreate={(channel) => {
-                  setSelectedChannel(channel);
-                }}
-              />
-            )}
+              {/* Server Channels */}
+              {activeTab === 'servers' && selectedServer && (
+                <ServerChannels
+                  selectedServer={selectedServer}
+                  selectedChannel={selectedChannel}
+                  onChannelSelect={(channel) => {
+                    setSelectedChannel(channel);
+                    // Clear unread and mentions when selecting channel
+                    setUnreadMessages(prev => {
+                      const newMap = new Map(prev);
+                      newMap.delete(channel.id);
+                      return newMap;
+                    });
+                    setMentions(prev => {
+                      const newMap = new Map(prev);
+                      newMap.delete(channel.id);
+                      return newMap;
+                    });
+                  }}
+                  onChannelCreate={(channel) => {
+                    setSelectedChannel(channel);
+                  }}
+                />
+              )}
+            </div>
+
+            {/* Bottom section - UserBar expanding to the left */}
+            <div className="flex">
+              {/* UserBar - Starts from server list area and expands leftward */}
+              <div className="flex-1">
+                <UserBar user={user} onSettingsOpen={() => setShowSettings(true)} />
+              </div>
+            </div>
           </div>
 
           {/* Main content - Chat */}
-          <div className={`flex-1 h-[calc(100vh-140px)] transition-all duration-300 bg-gray-900 mx-2`}>
+          <div className={`flex-1 h-[calc(100vh-140px)] transition-all duration-300 bg-surface mx-2`}>
             {selectedChannel && (
               <ChatRoom 
                 channelId={selectedChannel.id} 
@@ -548,11 +983,13 @@ export default function App() {
                 username={user.username}
                 avatar={user.avatar_url}
                 serverId={selectedServer?.id}
+                voiceChat={voiceChat}
+                isPreview={isVoicePreview}
               />
             )}
             {!selectedChannel && activeTab === 'servers' && (
-              <div className="h-full flex items-center justify-center bg-gray-900">
-                <div className="text-gray-400 text-center">
+              <div className="h-full flex items-center justify-center bg-surface">
+                <div className="text-on-surface-variant text-center">
                   <div className="text-4xl mb-4">💬</div>
                   <div className="text-xl font-medium">Select a channel to start chatting</div>
                   <div className="text-sm mt-2">Choose from the channels on the left</div>
@@ -563,7 +1000,7 @@ export default function App() {
 
           {/* Right sidebar - Server Members only */}
           {activeTab === 'servers' && selectedServer && (
-            <div className={`h-[calc(100vh-140px)] bg-gray-800 transition-all duration-300 ease-in-out overflow-hidden border-l border-gray-700 ${
+            <div className={`h-[calc(100vh-140px)] bg-surface-variant transition-all duration-300 ease-in-out overflow-hidden border-l border-outline ${
               isUserListCollapsed ? 'w-0' : 'w-64'
             }`}>
               <ServerMembers 
@@ -588,5 +1025,14 @@ export default function App() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Main App component with ThemeProvider
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 }

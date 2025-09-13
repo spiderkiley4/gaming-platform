@@ -7,7 +7,7 @@ export default function ServerChannels({
   selectedServer, 
   selectedChannel, 
   onChannelSelect, 
-  onChannelCreate 
+  onChannelCreate
 }) {
   const [textChannels, setTextChannels] = useState([]);
   const [voiceChannels, setVoiceChannels] = useState([]);
@@ -205,6 +205,10 @@ export default function ServerChannels({
                         : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                     }`}
                     onClick={() => onChannelSelect({ ...channel, type: 'voice' })}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      onChannelSelect({ ...channel, type: 'voice', preview: true });
+                    }}
                   >
                     <div className="flex items-center justify-between">
                       <div className="truncate">
@@ -220,8 +224,8 @@ export default function ServerChannels({
                     </div>
                     {users.length > 0 && (
                       <div className="mt-1 flex -space-x-2">
-                        {users.slice(0, 5).map((u) => (
-                          <div key={u.userId} className="w-5 h-5 rounded-full ring-2 ring-gray-800 bg-gray-600 text-[10px] flex items-center justify-center overflow-hidden">
+                        {users.slice(0, 5).map((u, index) => (
+                          <div key={`${u.userId}-${index}`} className="w-5 h-5 rounded-full ring-2 ring-gray-800 bg-gray-600 text-[10px] flex items-center justify-center overflow-hidden">
                             {u.avatar_url ? (
                               <img src={resolveAvatarUrl(u.avatar_url)} alt={u.username} className="w-full h-full object-cover" />
                             ) : (
@@ -243,6 +247,18 @@ export default function ServerChannels({
           </div>
         )}
 
+        {/* Create Channel Button - Right below voice channels */}
+        {voiceChannels.length > 0 && (
+          <div className="px-2 py-1">
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="w-full p-1.5 bg-gray-800/50 hover:bg-gray-700/50 text-gray-400 hover:text-gray-300 rounded text-xs transition-colors"
+            >
+              + Create Channel
+            </button>
+          </div>
+        )}
+
         {/* Empty State */}
         {textChannels.length === 0 && voiceChannels.length === 0 && (
           <div className="text-center text-gray-400 py-8">
@@ -251,16 +267,6 @@ export default function ServerChannels({
             <div className="text-xs mt-1">Create a channel to get started</div>
           </div>
         )}
-      </div>
-
-      {/* Create Channel Button */}
-      <div className="p-4 border-t border-gray-700">
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="w-full p-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded text-sm transition-colors"
-        >
-          + Create Channel
-        </button>
       </div>
 
       {/* Create Channel Modal */}

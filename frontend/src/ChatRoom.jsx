@@ -1,12 +1,62 @@
 import { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { getMessages, getServerChannelMessages } from './api';
-import { useVoiceChat } from './hooks/useVoiceChat';
 import { getSocket } from './socket';
 import { API_URL } from './api';
 import VideoPlayer from './components/VideoPlayer'; // Adjust the path as necessary
 import { resolveAvatarUrl, resolveMediaUrl } from './utils/mediaUrl';
 
-export default function ChatRoom({ channelId, userId, type, username, avatar, serverId }) {
+// Screen share video component
+const ScreenShareVideo = ({ videoStream, username }) => {
+  const videoRef = useRef(null);
+  const currentStreamRef = useRef(null);
+
+  useEffect(() => {
+    const videoElement = videoRef.current;
+    if (videoElement && videoStream && videoStream !== currentStreamRef.current) {
+      console.log('Setting video stream for screen share:', videoStream);
+      currentStreamRef.current = videoStream;
+      
+      // Clear any existing stream first
+      if (videoElement.srcObject) {
+        videoElement.srcObject = null;
+      }
+      
+      // Set new stream
+      videoElement.srcObject = videoStream;
+      
+      // Play with better error handling
+      videoElement.play().catch(error => {
+        // Only log non-abort errors
+        if (!error.message.includes('aborted')) {
+          console.error('Error playing screen share video:', error);
+        }
+      });
+    }
+  }, [videoStream]);
+
+  return (
+    <div className="relative w-full h-full bg-black flex items-center justify-center">
+      <video
+        ref={videoRef}
+        className="max-w-full max-h-full object-contain"
+        autoPlay
+        muted
+        playsInline
+        onError={(e) => {
+          // Only log non-abort errors
+          if (!e.target.error || e.target.error.code !== MediaError.MEDIA_ERR_ABORTED) {
+            console.error('Video element error:', e.target.error);
+          }
+        }}
+      />
+      <div className="absolute top-4 left-4 bg-black bg-opacity-70 text-white text-sm px-3 py-2 rounded-lg">
+        {username}'s Screen
+      </div>
+    </div>
+  );
+};
+
+export default function ChatRoom({ channelId, userId, type, username, avatar, serverId, voiceChat, isPreview = false }) {
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -19,8 +69,26 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
+  const hasAttemptedVoiceJoin = useRef(false);
   const socket = getSocket();
-  const { isMuted, isConnected, isSpeaking, isScreenSharing, peers, startVoiceChat, toggleMute, disconnect, startScreenShare, stopScreenShare, setPeerVolume } = useVoiceChat(channelId, socket);
+  
+  // Use voice chat state from parent component (App) to persist across navigation
+  const { 
+    isMuted = false, 
+    isDeafened = false, 
+    isConnected = false, 
+    isSpeaking = false, 
+    isScreenSharing = false, 
+    peers = new Map(), 
+    localScreenStreamRef = null,
+    startVoiceChat = () => {}, 
+    toggleMute = () => {}, 
+    toggleDeafen = () => {}, 
+    disconnect = () => {}, 
+    startScreenShare = () => {}, 
+    stopScreenShare = () => {}, 
+    setPeerVolume = () => {} 
+  } = voiceChat || {};
 
   // Get all online users for mention suggestions
   const [users, setUsers] = useState([]);
@@ -331,187 +399,302 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
     }
   };
 
-  if (type === 'voice') {
-    return (
-      <div className="flex flex-col bg-gray-800 p-4 rounded-lg">
-        <div className="flex items-center justify-between mb-4 p-4 bg-gray-700 rounded">
-          <div className="flex items-center gap-2">
-            {avatar ? (
-              <img 
-                src={resolveAvatarUrl(avatar)} 
-                alt={username} 
-                className="w-8 h-8 rounded-full"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-                {username.charAt(0).toUpperCase()}
-              </div>
-            )}
-            <span className="text-gray-300">{username}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={isConnected ? disconnect : startVoiceChat}
-              className={`p-2 rounded text-white ${
-                isConnected ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
-              }`}
-            >
-              {isConnected ? 'Disconnect' : 'Join Voice'}
-            </button>
-            {isConnected && (
-              <button
-                onClick={toggleMute}
-                className={`p-2 rounded text-white ${
-                  isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'
-                }`}
-              >
-                {isMuted ? 'Unmute' : 'Mute'}
-              </button>
-            )}
-            {isConnected && (
-              <button
-                onClick={isScreenSharing ? stopScreenShare : startScreenShare}
-                className={`p-2 rounded text-white ${
-                  isScreenSharing ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-500 hover:bg-purple-600'
-                }`}
-                title={isScreenSharing ? 'Stop Screen Share' : 'Start Screen Share'}
-              >
-                {isScreenSharing ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                )}
-              </button>
-            )}
-          </div>
-        </div>
+  // Auto-join voice chat when component mounts for voice channels (unless in preview mode)
+  useEffect(() => {
+    if (type === 'voice' && voiceChat && !isConnected && startVoiceChat && !hasAttemptedVoiceJoin.current && !isPreview) {
+      // Join immediately without delay for better UX
+      hasAttemptedVoiceJoin.current = true;
+      startVoiceChat();
+    }
+    
+    // Reset the flag when switching away from voice channels
+    if (type !== 'voice') {
+      hasAttemptedVoiceJoin.current = false;
+    }
+  }, [type, voiceChat, isConnected, startVoiceChat, isPreview]);
 
-        <div className="flex-1 p-4 bg-gray-700 rounded">
-          <h3 className="text-lg font-semibold mb-4">Voice Channel Participants</h3>
-          <div className="space-y-3">
-            {/* Current user */}
-            <div className="flex items-center gap-3 p-2 bg-gray-600 rounded">
-              <div className={`relative rounded-full ${isSpeaking ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-gray-700' : ''}`}>
-                {avatar ? (
-                  <img 
-                    src={resolveAvatarUrl(avatar)} 
-                    alt={username} 
-                    className="w-10 h-10 rounded-full"
+  if (type === 'voice') {
+    
+    // Find if anyone is screen sharing (including local user)
+    const screenSharingPeer = Array.from(peers.entries()).find(([_, peer]) => peer.isScreenSharing);
+    const localScreenSharing = isScreenSharing && localScreenStreamRef?.current;
+    
+    // Create participants list including current user
+    const allParticipants = [];
+    if (isConnected) {
+      allParticipants.push({
+        id: 'current-user',
+        username: username,
+        avatar: avatar,
+        isCurrentUser: true,
+        isMuted: isMuted,
+        isDeafened: isDeafened,
+        isSpeaking: isSpeaking,
+        isScreenSharing: isScreenSharing
+      });
+    }
+    
+    // Add other peers
+    Array.from(peers.entries()).forEach(([peerId, peer]) => {
+      const fallbackUser = users.find(u => u.userId === peer.userId);
+      allParticipants.push({
+        id: peerId,
+        userId: peer.userId,
+        username: peer.username || fallbackUser?.username || `User ${peerId.slice(0, 4)}`,
+        avatar: peer.avatar_url || fallbackUser?.avatar_url || null,
+        isCurrentUser: false,
+        isMuted: peer.muted,
+        isDeafened: false, // Remote users can't be deafened
+        isSpeaking: peer.speaking,
+        isScreenSharing: peer.isScreenSharing
+      });
+    });
+    
+    return (
+      <div className="flex flex-col h-full bg-gray-900">
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {(localScreenSharing || screenSharingPeer) ? (
+            // Screen Share View with users at bottom
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 bg-black flex items-center justify-center relative overflow-hidden">
+                {localScreenSharing ? (
+                  // Show local user's screen share
+                  <ScreenShareVideo 
+                    videoStream={localScreenStreamRef.current} 
+                    username={`${username} (You)`}
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
-                    {username.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                {isConnected && (
-                  <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-gray-700 ${
-                    isMuted ? 'bg-red-500' : (isSpeaking ? 'bg-green-500 animate-pulse' : 'bg-gray-400')
-                  }`}></div>
+                  // Show remote user's screen share
+                  <ScreenShareVideo 
+                    videoStream={screenSharingPeer[1].videoStream} 
+                    username={screenSharingPeer[1].username || `User ${screenSharingPeer[0].slice(0, 4)}`}
+                  />
                 )}
               </div>
-              <div>
-                <div className="font-medium">{username} (You)</div>
-                <div className="text-sm text-gray-400">
-                  {isConnected ? (isMuted ? 'Muted' : (isSpeaking ? 'Speaking' : 'Not speaking')) : 'Not Connected'}
-                </div>
+              
+              {/* Users at bottom when screen sharing */}
+              <div className="p-4 bg-gray-800 border-t border-gray-700">
+                {/* Participants grid at bottom - smaller version of normal view */}
+                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+                   {allParticipants.map((participant) => (
+                     <div 
+                       key={participant.id} 
+                       className={`relative group flex items-center justify-center bg-gray-800 rounded-xl p-3 hover:bg-gray-750 transition-colors cursor-pointer ${
+                         participant.isSpeaking ? 'shadow-[0_0_0_3px_rgba(34,197,94,1)]' : ''
+                       }`}
+                       title={participant.isCurrentUser ? `${participant.username} (You)` : participant.username}
+                     >
+                       <div className="relative w-16 h-16 rounded-full">
+                         <div className="w-full h-full rounded-full overflow-hidden">
+                           {participant.avatar ? (
+                             <img 
+                               src={resolveAvatarUrl(participant.avatar)} 
+                               alt={participant.username} 
+                               className="w-full h-full object-cover"
+                             />
+                           ) : (
+                             <div className="w-full h-full bg-gray-600 flex items-center justify-center">
+                               <span className="text-white font-medium text-lg">
+                                 {participant.username.charAt(0).toUpperCase()}
+                               </span>
+                             </div>
+                           )}
+                         </div>
+                         <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-gray-800 ${
+                           participant.isMuted ? 'bg-red-500' : 
+                           participant.isDeafened ? 'bg-orange-500' :
+                           participant.isSpeaking ? 'bg-green-500' : 'bg-gray-400'
+                         }`}></div>
+                         {participant.isScreenSharing && (
+                           <div className="absolute top-0 right-0 w-4 h-4 bg-purple-500 rounded-full border-2 border-gray-800 flex items-center justify-center">
+                             <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                             </svg>
+                           </div>
+                         )}
+                       </div>
+                       
+                       {/* Hover tooltip */}
+                       <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                         {participant.isCurrentUser ? `${participant.username} (You)` : participant.username}
+                         <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
               </div>
             </div>
-
-            {/* Other participants */}
-            {Array.from(peers.entries()).map(([peerId, peer]) => {
-              const fallbackUser = users.find(u => u.userId === peer.userId);
-              const displayUsername = peer.username || fallbackUser?.username || `User ${peerId.slice(0, 4)}`;
-              const displayAvatar = peer.avatar_url || fallbackUser?.avatar_url || null;
-              return (
-                <div key={peerId} className="flex items-center gap-3 p-2 bg-gray-600 rounded">
-                  <div className={`relative rounded-full ${peer.speaking ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-gray-700' : ''}`}>
-                    {displayAvatar ? (
-                      <img 
-                        src={resolveAvatarUrl(displayAvatar)} 
-                        alt={displayUsername} 
-                        className="w-10 h-10 rounded-full"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center">
-                        {displayUsername.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-gray-700 ${peer.muted ? 'bg-red-500' : (peer.speaking ? 'bg-green-500 animate-pulse' : 'bg-gray-400')}`}></div>
+          ) : (
+            // No Screen Share - Large user squares filling space
+            <div className="flex-1 p-6">
+              {!isConnected ? (
+                // Join button in center when not connected
+                <div className="flex flex-col items-center justify-center h-full">
+                  <div className="w-24 h-24 bg-gray-700 rounded-full flex items-center justify-center mb-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{displayUsername}</div>
-                    <div className="text-xs text-gray-300 mt-1 flex items-center gap-2">
-                      <input
-                        type="range"
-                        min="0"
-                        max="2"
-                        step="0.01"
-                        value={typeof peer.volume === 'number' ? Math.min(2, peer.volume) : 1}
-                        onChange={(e) => setPeerVolume(peerId, parseFloat(e.target.value))}
-                        className="w-40 accent-blue-500"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        max={5}
-                        step={0.01}
-                        value={typeof peer.volume === 'number' ? peer.volume : 1}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          if (!Number.isNaN(val)) setPeerVolume(peerId, val);
-                        }}
-                        className="w-16 bg-gray-600 text-gray-100 px-1 py-0.5 rounded"
-                      />
-                      <span className="w-12 text-right">{Math.round((peer.volume ?? 1) * 100)}%</span>
-                    </div>
-                    {peer.isScreenSharing && (
-                      <div className="mt-2">
-                        <div className="flex items-center gap-2 text-xs text-purple-400 mb-2">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                          </svg>
-                          Screen Sharing
-                        </div>
-                        {peer.videoStream && (
-                          <div className="relative bg-black rounded overflow-hidden">
-                            <video
-                              ref={(videoElement) => {
-                                if (videoElement && peer.videoStream) {
-                                  videoElement.srcObject = peer.videoStream;
-                                  videoElement.play().catch(console.error);
-                                }
-                              }}
-                              className="w-full h-32 object-contain"
-                              autoPlay
-                              muted
-                              playsInline
-                            />
-                            <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-                              {displayUsername}'s Screen
-                            </div>
+                  <h3 className="text-2xl font-semibold text-white mb-2">Voice Channel</h3>
+                  <p className="text-gray-400 mb-8 text-center max-w-md">
+                    {isPreview 
+                      ? "Right-click to preview this voice channel. Click the button below to join the conversation."
+                      : "You're not connected to voice. Click the button below to join the conversation."
+                    }
+                  </p>
+                  <button
+                    onClick={startVoiceChat}
+                    className="px-8 py-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center gap-3 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    Join Voice Channel
+                  </button>
+                </div>
+               ) : (
+                 // Large user squares when connected
+                 <div className="h-full flex flex-col">
+                   {/* Large user grid filling most space */}
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {allParticipants.map((participant) => (
+                      <div key={participant.id} className={`flex flex-col items-center justify-center bg-gray-800 rounded-xl p-6 hover:bg-gray-750 transition-colors ${
+                        participant.isSpeaking ? 'shadow-[0_0_0_4px_rgba(34,197,94,1)]' : ''
+                      }`}>
+                        <div className="relative w-24 h-24 rounded-full mb-4">
+                          <div className="w-full h-full rounded-full overflow-hidden">
+                            {participant.avatar ? (
+                              <img 
+                                src={resolveAvatarUrl(participant.avatar)} 
+                                alt={participant.username} 
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gray-600 flex items-center justify-center">
+                                <span className="text-white font-medium text-2xl">
+                                  {participant.username.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                            )}
                           </div>
-                        )}
+                          <div className={`absolute bottom-0 right-0 w-6 h-6 rounded-full border-4 border-gray-800 ${
+                            participant.isMuted ? 'bg-red-500' : 
+                            participant.isDeafened ? 'bg-orange-500' :
+                            participant.isSpeaking ? 'bg-green-500' : 'bg-gray-400'
+                          }`}></div>
+                        </div>
+                        <h4 className="text-white font-medium text-lg text-center mb-1">
+                          {participant.isCurrentUser ? `${participant.username} (You)` : participant.username}
+                        </h4>
+                        <div className="flex items-center gap-2 text-sm text-gray-400">
+                          {participant.isMuted && <span className="text-red-400">Muted</span>}
+                          {participant.isDeafened && <span className="text-orange-400">Deafened</span>}
+                          {participant.isSpeaking && <span className="text-green-400">Speaking</span>}
+                          {participant.isScreenSharing && (
+                            <div className="flex items-center gap-1 text-purple-400">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                              <span>Sharing</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
-              );
-            })}
+              )}
+            </div>
+          )}
+        </div>
 
-            {isConnected && peers.size === 0 && (
-              <div className="text-center text-gray-400 py-4">
-                No other participants in this channel
-              </div>
-            )}
-
-            {!isConnected && (
-              <div className="text-center text-gray-400 py-4">
-                Join voice to see other participants
-              </div>
+        {/* Bottom Controls - Discord Style */}
+        <div className="flex-shrink-0 p-4 bg-gray-800 border-t border-gray-700">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {isConnected ? (
+                <>
+                  <button
+                    onClick={toggleMute}
+                    className={`p-3 rounded-full ${
+                      isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-600 hover:bg-gray-500'
+                    }`}
+                    title={isMuted ? 'Unmute' : 'Mute'}
+                  >
+                    {isMuted ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={toggleDeafen}
+                    className={`p-3 rounded-full ${
+                      isDeafened ? 'bg-orange-500 hover:bg-orange-600' : 'bg-gray-600 hover:bg-gray-500'
+                    }`}
+                    title={isDeafened ? 'Undeafen' : 'Deafen'}
+                  >
+                    {isDeafened ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                      </svg>
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+                    className={`p-3 rounded-full ${
+                      isScreenSharing ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-600 hover:bg-gray-500'
+                    }`}
+                    title={isScreenSharing ? 'Stop Screen Share' : 'Start Screen Share'}
+                  >
+                    {isScreenSharing ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={startVoiceChat}
+                  className="p-3 rounded-full bg-green-500 hover:bg-green-600"
+                  title="Join Voice Channel"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            
+            {isConnected && (
+              <button
+                onClick={disconnect}
+                className="p-3 rounded-full bg-red-500 hover:bg-red-600"
+                title="Disconnect"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 3l18 18" />
+                </svg>
+              </button>
             )}
           </div>
         </div>
@@ -554,7 +737,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
 
   return (
     <div className="flex flex-col bg-gray-800 p-4 rounded-lg h-[calc(100vh-140px)]">
-      <div className="flex flex-col h-[calc(100vh-100px)] overflow-y-auto">
+      <div className="flex flex-col h-[calc(100vh-100px)] overflow-y-auto -mr-4 pr-4">
         {messages.map((message, index) => {
           const currentDate = new Date(message.created_at).toDateString();
           const prevDate = index > 0 ? new Date(messages[index - 1].created_at).toDateString() : null;

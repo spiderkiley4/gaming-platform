@@ -747,9 +747,55 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('get_voice_channel_info', ({ channelId }) => {
+    console.log(`User ${socket.user.username} (${socket.id}) requesting info for voice channel ${channelId}`);
+    const voiceRoom = `voice-${channelId}`;
+    
+    // Get existing users in the voice room
+    const room = io.sockets.adapter.rooms.get(voiceRoom);
+    const existingUsers = room ? Array.from(room) : [];
+    
+    // Get user info for existing users
+    const existingUsersWithInfo = existingUsers.map(socketId => {
+      const existingSocket = io.sockets.sockets.get(socketId);
+      if (existingSocket && existingSocket.user) {
+        return {
+          socketId: socketId,
+          userId: existingSocket.user.id,
+          username: existingSocket.user.username,
+          avatar_url: existingSocket.user.avatar_url,
+          muted: !!existingSocket.voiceMuted
+        };
+      }
+      return { socketId: socketId };
+    });
+    
+    // Send voice channel info back to the requesting user
+    socket.emit('voice_channel_info', { 
+      channelId,
+      users: existingUsersWithInfo,
+      count: existingUsers.length
+    });
+  });
+
   socket.on('voice_join', ({ channelId }) => {
     console.log(`User ${socket.user.username} (${socket.id}) joining voice channel ${channelId}`);
     const voiceRoom = `voice-${channelId}`;
+    
+    // Leave all other voice channels first
+    const currentRooms = Array.from(socket.rooms);
+    currentRooms.forEach(room => {
+      if (room.startsWith('voice-') && room !== voiceRoom) {
+        console.log(`Leaving previous voice channel: ${room}`);
+        socket.leave(room);
+        // Notify other users in the previous room that this user left
+        socket.to(room).emit('user_left_voice', { 
+          socketId: socket.id,
+          userId: socket.user.id,
+          username: socket.user.username
+        });
+      }
+    });
     
     // Get existing users in the voice room before joining
     const room = io.sockets.adapter.rooms.get(voiceRoom);

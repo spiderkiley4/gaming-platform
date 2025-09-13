@@ -1,0 +1,89 @@
+/* Theme CSS Custom Properties */
+:root {
+  /* Default theme variables - will be overridden by JavaScript */
+  --color-background: #1a1a1a;
+  --color-surface: #2d2d2d;
+  --color-surface-variant: #3a3a3a;
+  --color-surface-container: #252525;
+  
+  --color-on-background: #ffffff;
+  --color-on-surface: #ffffff;
+  --color-on-surface-variant: #b3b3b3;
+  --color-on-primary: #ffffff;
+  --color-on-secondary: #ffffff;
+  
+  --color-primary: #5865f2;
+  --color-primary-container: #4752c4;
+  --color-secondary: #4f545c;
+  --color-secondary-container: #36393f;
+  
+  --color-accent: #00d4aa;
+  --color-accent-container: #00b894;
+  
+  --color-success: #00d4aa;
+  --color-warning: #faa61a;
+  --color-error: #ed4245;
+  --color-info: #5865f2;
+  
+  --color-outline: #4f545c;
+  --color-outline-variant: #36393f;
+  
+  --color-hover: rgba(255, 255, 255, 0.1);
+  --color-pressed: rgba(255, 255, 255, 0.2);
+  --color-disabled: rgba(255, 255, 255, 0.3);
+  
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --color-shadow: rgba(0, 0, 0, 0.3);
+}
+
+/* Theme utility classes */
+.bg-background { background-color: var(--color-background); }
+.bg-surface { background-color: var(--color-surface); }
+.bg-surface-variant { background-color: var(--color-surface-variant); }
+.bg-surface-container { background-color: var(--color-surface-container); }
+
+.text-on-background { color: var(--color-on-background); }
+.text-on-surface { color: var(--color-on-surface); }
+.text-on-surface-variant { color: var(--color-on-surface-variant); }
+.text-on-primary { color: var(--color-on-primary); }
+.text-on-secondary { color: var(--color-on-secondary); }
+
+.bg-primary { background-color: var(--color-primary); }
+.bg-primary-container { background-color: var(--color-primary-container); }
+.bg-secondary { background-color: var(--color-secondary); }
+.bg-secondary-container { background-color: var(--color-secondary-container); }
+
+.bg-accent { background-color: var(--color-accent); }
+.bg-accent-container { background-color: var(--color-accent-container); }
+
+.bg-success { background-color: var(--color-success); }
+.bg-warning { background-color: var(--color-warning); }
+.bg-error { background-color: var(--color-error); }
+.bg-info { background-color: var(--color-info); }
+
+.border-outline { border-color: var(--color-outline); }
+.border-outline-variant { border-color: var(--color-outline-variant); }
+
+.hover\:bg-hover:hover { background-color: var(--color-hover); }
+.hover\:bg-pressed:hover { background-color: var(--color-pressed); }
+
+.bg-overlay { background-color: var(--color-overlay); }
+.shadow-theme { box-shadow: 0 4px 6px var(--color-shadow); }
+
+/* Theme-specific classes */
+.theme-dark {
+  /* Dark theme specific overrides if needed */
+}
+
+.theme-light {
+  /* Light theme specific overrides if needed */
+}
+
+.theme-custom {
+  /* Custom theme specific overrides if needed */
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}

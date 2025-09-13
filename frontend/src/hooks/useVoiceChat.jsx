@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
-export function useVoiceChat(channelId, socket) {
+export function useVoiceChat(channelId, socket, isPreview = false) {
   const [isMuted, setIsMuted] = useState(true);
+  const [isDeafened, setIsDeafened] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [peers, setPeers] = useState(new Map());
   const localStreamRef = useRef(null);
@@ -301,7 +302,11 @@ export function useVoiceChat(channelId, socket) {
     // Close any existing connection in a bad state
     if (peerConnection) {
       console.log('Closing existing connection in state:', peerConnection.connectionState);
-      peerConnection.close();
+      try {
+        peerConnection.close();
+      } catch (e) {
+        console.warn('Error closing existing connection:', e);
+      }
     }
 
     // Create new connection
@@ -310,6 +315,9 @@ export function useVoiceChat(channelId, socket) {
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
       ],
+      iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
     });
 
     // Initialize pending ICE candidates array
@@ -319,23 +327,39 @@ export function useVoiceChat(channelId, socket) {
       console.log(`Connection state for ${remoteUserId}:`, peerConnection.connectionState);
       if (peerConnection.connectionState === 'connected') {
         console.log('Peer connection established successfully');
-      } else if (peerConnection.connectionState === 'failed' || 
-                 peerConnection.connectionState === 'closed') {
-        console.log('Connection failed or closed, cleaning up');
-        peerConnectionsRef.current.delete(remoteUserId);
-        const audioElement = audioElementsRef.current.get(remoteUserId);
-        if (audioElement) {
-          audioElement.srcObject = null;
-          audioElement.remove();
-          audioElementsRef.current.delete(remoteUserId);
-        }
-        teardownRemoteAnalyser(remoteUserId);
-        setPeers((prevPeers) => {
-          const newPeers = new Map(prevPeers);
-          newPeers.delete(remoteUserId);
-          return newPeers;
-        });
+      } else if (peerConnection.connectionState === 'failed') {
+        console.log('Connection failed, attempting to reconnect...');
+        // Don't immediately clean up on failed state, give it a chance to recover
+        setTimeout(() => {
+          if (peerConnection.connectionState === 'failed') {
+            console.log('Connection still failed after timeout, cleaning up');
+            cleanupPeerConnection(remoteUserId);
+          }
+        }, 5000);
+      } else if (peerConnection.connectionState === 'closed' ||
+                 peerConnection.connectionState === 'disconnected') {
+        console.log('Connection closed or disconnected, cleaning up');
+        cleanupPeerConnection(remoteUserId);
       }
+    };
+
+    // Helper function to clean up a peer connection
+    const cleanupPeerConnection = (userId) => {
+      peerConnectionsRef.current.delete(userId);
+      const audioElement = audioElementsRef.current.get(userId);
+      if (audioElement) {
+        audioElement.srcObject = null;
+        audioElement.remove();
+        audioElementsRef.current.delete(userId);
+      }
+      teardownRemoteAnalyser(userId);
+      volumesRef.current.delete(userId);
+      setPeers((prevPeers) => {
+        const newPeers = new Map(prevPeers);
+        newPeers.delete(userId);
+        console.log('Removed disconnected user from peers. Remaining peers:', newPeers.size);
+        return newPeers;
+      });
     };
 
     peerConnection.oniceconnectionstatechange = () => {
@@ -367,13 +391,17 @@ export function useVoiceChat(channelId, socket) {
         // Process pending ICE candidates when we reach stable state
         processPendingCandidates();
         
-        // Process any pending answers
+        // Process any pending answers only if we're in the right state
         const pendingAnswer = pendingAnswersRef.current.get(remoteUserId);
-        if (pendingAnswer) {
+        if (pendingAnswer && peerConnection.signalingState === 'stable') {
           console.log('Processing pending answer for:', remoteUserId);
           pendingAnswersRef.current.delete(remoteUserId);
           peerConnection.setRemoteDescription(new RTCSessionDescription(pendingAnswer))
-            .catch(err => console.error('Error processing pending answer:', err));
+            .catch(err => {
+              console.error('Error processing pending answer:', err);
+              // If we can't process the pending answer, clear it
+              pendingAnswersRef.current.delete(remoteUserId);
+            });
         }
       }
     };
@@ -391,7 +419,7 @@ export function useVoiceChat(channelId, socket) {
     // Add local screen share tracks if available
     if (localScreenStreamRef.current) {
       localScreenStreamRef.current.getTracks().forEach((track) => {
-        console.log('Adding screen track to peer connection', track.kind);
+        console.log('Adding existing screen track to new peer connection', track.kind);
         peerConnection.addTrack(track, localScreenStreamRef.current);
       });
     }
@@ -408,23 +436,54 @@ export function useVoiceChat(channelId, socket) {
       }
     };
 
+    // Add error handling to suppress DTLS transport errors
+    peerConnection.oniceconnectionstatechange = () => {
+      if (peerConnection.iceConnectionState === 'failed') {
+        console.log('ICE connection failed for', remoteUserId, '- attempting restart');
+        // Don't log the DTLS error as it's expected during connection establishment
+      }
+    };
+
     peerConnection.ontrack = (event) => {
-      console.log('Received remote track', event.track.kind, 'from', remoteUserId);
+      console.log('Received remote track', event.track.kind, 'from', remoteUserId, 'Track details:', {
+        id: event.track.id,
+        kind: event.track.kind,
+        label: event.track.label,
+        enabled: event.track.enabled,
+        readyState: event.track.readyState
+      });
       const stream = event.streams[0];
       if (stream) {
+        console.log('Stream details:', {
+          id: stream.id,
+          active: stream.active,
+          audioTracks: stream.getAudioTracks().length,
+          videoTracks: stream.getVideoTracks().length
+        });
         setPeers((prevPeers) => {
           const newPeers = new Map(prevPeers);
           const existingPeer = newPeers.get(remoteUserId);
           
-          // Create separate streams for audio and video
-          const audioStream = new MediaStream();
-          const videoStream = new MediaStream();
+          // Get existing streams or create new ones
+          let audioStream = existingPeer?.stream || new MediaStream();
+          let videoStream = existingPeer?.videoStream || new MediaStream();
           
+          // Add new tracks to existing streams
           stream.getTracks().forEach(track => {
             if (track.kind === 'audio') {
-              audioStream.addTrack(track);
+              // Check if this audio track is already in the stream
+              const hasTrack = audioStream.getTracks().some(existingTrack => existingTrack.id === track.id);
+              if (!hasTrack) {
+                audioStream.addTrack(track);
+                console.log('Added audio track to existing stream for', remoteUserId);
+              }
             } else if (track.kind === 'video') {
-              videoStream.addTrack(track);
+              // Check if this video track is already in the stream
+              const hasTrack = videoStream.getTracks().some(existingTrack => existingTrack.id === track.id);
+              if (!hasTrack) {
+                videoStream.addTrack(track);
+                console.log('Added video track to existing stream for', remoteUserId);
+              }
             }
           });
           
@@ -452,7 +511,7 @@ export function useVoiceChat(channelId, socket) {
           audioElementsRef.current.set(remoteUserId, audioElement);
         }
         
-        // Create audio-only stream for audio element
+        // Update audio element with all audio tracks
         const audioStream = new MediaStream();
         stream.getAudioTracks().forEach(track => audioStream.addTrack(track));
         audioElement.srcObject = audioStream;
@@ -467,7 +526,7 @@ export function useVoiceChat(channelId, socket) {
     return peerConnection;
   };
 
-  const cleanupConnections = () => {
+  const cleanupConnections = useCallback(() => {
     // Close all peer connections
     peerConnectionsRef.current.forEach((connection, remoteUserId) => {
       try { connection.close(); } catch (_) {}
@@ -486,9 +545,9 @@ export function useVoiceChat(channelId, socket) {
 
     // Reset peers state
     setPeers(new Map());
-  };
+  }, []);
 
-  const startVoiceChat = async () => {
+  const startVoiceChat = useCallback(async () => {
     try {
       console.log('Requesting microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -519,9 +578,9 @@ export function useVoiceChat(channelId, socket) {
       console.error('Error accessing microphone:', err);
       alert('Error accessing microphone. Please check permissions and try again.');
     }
-  };
+  }, [socket, channelId]);
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     if (localStreamRef.current) {
       const newMutedState = !isMuted;
       localStreamRef.current.getAudioTracks().forEach((track) => {
@@ -536,9 +595,32 @@ export function useVoiceChat(channelId, socket) {
         }
       } catch (_) {}
     }
-  };
+  }, [isMuted, socket, channelId]);
 
-  const disconnect = () => {
+  const toggleDeafen = useCallback(() => {
+    const newDeafenedState = !isDeafened;
+    setIsDeafened(newDeafenedState);
+    
+    if (newDeafenedState) {
+      // When deafened, also mute yourself
+      if (!isMuted) {
+        toggleMute();
+      }
+      // Mute all remote audio
+      audioElementsRef.current.forEach((audioElement) => {
+        audioElement.muted = true;
+      });
+    } else {
+      // When undeafened, restore remote audio volumes
+      audioElementsRef.current.forEach((audioElement, userId) => {
+        const volume = volumesRef.current.get(userId) || 1;
+        audioElement.muted = false;
+        // Volume is controlled by Web Audio gain nodes, not the audio element
+      });
+    }
+  }, [isDeafened, isMuted, toggleMute]);
+
+  const disconnect = useCallback(() => {
     console.log('Disconnecting from voice chat');
     // Stop all local tracks
     localStreamRef.current?.getTracks().forEach((track) => {
@@ -570,9 +652,9 @@ export function useVoiceChat(channelId, socket) {
     if (socket && socket.connected) {
       socket.emit('voice_leave', { channelId });
     }
-  };
+  }, [socket, channelId, cleanupConnections]);
 
-  const startScreenShare = async () => {
+  const startScreenShare = useCallback(async () => {
     try {
       console.log('Requesting screen share access...');
       
@@ -659,11 +741,40 @@ export function useVoiceChat(channelId, socket) {
       setIsScreenSharing(true);
       
       // Add screen share tracks to existing peer connections
-      peerConnectionsRef.current.forEach((peerConnection, remoteUserId) => {
+      peerConnectionsRef.current.forEach(async (peerConnection, remoteUserId) => {
+        // Clear any pending answers before renegotiation
+        pendingAnswersRef.current.delete(remoteUserId);
+        
         videoTracks.forEach((track) => {
+          console.log('Adding screen track to peer connection for:', remoteUserId, 'Track details:', {
+            id: track.id,
+            kind: track.kind,
+            label: track.label,
+            enabled: track.enabled,
+            readyState: track.readyState
+          });
           peerConnection.addTrack(track, screenStream);
-          console.log('Added screen track to peer connection for:', remoteUserId);
         });
+        
+        // Renegotiate the connection to include the new video tracks
+        try {
+          console.log('Renegotiating connection for screen share with:', remoteUserId);
+          console.log('Current connection state:', peerConnection.connectionState);
+          console.log('Current signaling state:', peerConnection.signalingState);
+          
+          // Only create offer if connection is in a valid state
+          if (peerConnection.connectionState === 'connected' || 
+              peerConnection.connectionState === 'connecting') {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            console.log('Sending renegotiation offer to:', remoteUserId);
+            socket.emit('voice_offer', { offer, to: remoteUserId });
+          } else {
+            console.log('Connection not in valid state for renegotiation:', peerConnection.connectionState);
+          }
+        } catch (err) {
+          console.error('Error renegotiating connection for screen share:', err);
+        }
       });
       
       // Notify other users that we're sharing screen
@@ -713,9 +824,9 @@ export function useVoiceChat(channelId, socket) {
       
       alert(errorMessage);
     }
-  };
+  }, [socket, channelId]);
 
-  const stopScreenShare = () => {
+  const stopScreenShare = useCallback(() => {
     if (localScreenStreamRef.current) {
       console.log('Stopping screen share');
       
@@ -726,14 +837,30 @@ export function useVoiceChat(channelId, socket) {
       });
       
       // Remove screen share tracks from peer connections
-      peerConnectionsRef.current.forEach((peerConnection, remoteUserId) => {
+      peerConnectionsRef.current.forEach(async (peerConnection, remoteUserId) => {
         const senders = peerConnection.getSenders();
+        let removedVideoTrack = false;
+        
         senders.forEach((sender) => {
           if (sender.track && sender.track.kind === 'video') {
             peerConnection.removeTrack(sender);
             console.log('Removed screen track from peer connection for:', remoteUserId);
+            removedVideoTrack = true;
           }
         });
+        
+        // Renegotiate the connection after removing video tracks
+        if (removedVideoTrack) {
+          try {
+            console.log('Renegotiating connection after stopping screen share with:', remoteUserId);
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            console.log('Sending renegotiation offer after stopping screen share to:', remoteUserId);
+            socket.emit('voice_offer', { offer, to: remoteUserId });
+          } catch (err) {
+            console.error('Error renegotiating connection after stopping screen share:', err);
+          }
+        }
       });
       
       localScreenStreamRef.current = null;
@@ -744,7 +871,7 @@ export function useVoiceChat(channelId, socket) {
         socket.emit('screen_share_stop', { channelId });
       }
     }
-  };
+  }, [socket, channelId]);
 
   useEffect(() => {
     if (!socket) return;
@@ -753,15 +880,31 @@ export function useVoiceChat(channelId, socket) {
     const handleReconnect = () => {
       console.log('Socket reconnected, re-establishing voice connections');
       if (isConnected && localStreamRef.current) {
-        // Clean up existing connections
-        cleanupConnections();
-        // Rejoin the voice channel
-        socket.emit('voice_join', { channelId });
+        // Only clean up if we don't have any working connections
+        const hasWorkingConnections = Array.from(peerConnectionsRef.current.values())
+          .some(conn => conn.connectionState === 'connected' || conn.connectionState === 'connecting');
+        
+        if (!hasWorkingConnections) {
+          console.log('No working connections found, cleaning up and rejoining');
+          cleanupConnections();
+          // Rejoin the voice channel
+          socket.emit('voice_join', { channelId });
+        } else {
+          console.log('Found working connections, skipping cleanup');
+        }
       }
     };
 
-    // Add reconnect event listener
+    // Socket disconnection handler
+    const handleDisconnect = () => {
+      console.log('Socket disconnected, cleaning up voice connections');
+      // Clean up all peer connections when socket disconnects
+      cleanupConnections();
+    };
+
+    // Add event listeners
     socket.io.on("reconnect", handleReconnect);
+    socket.io.on("disconnect", handleDisconnect);
 
     const handleExistingUsers = async ({ users }) => {
       console.log('Received existing users:', users);
@@ -776,17 +919,36 @@ export function useVoiceChat(channelId, socket) {
         const socketId = user.socketId || user; // Handle both new format and legacy
         if (socketId === socket.id) continue; // Skip self
         
+        // Check if we already have a working connection for this user
+        const existingConnection = peerConnectionsRef.current.get(socketId);
+        if (existingConnection && 
+            (existingConnection.connectionState === 'connected' || 
+             existingConnection.connectionState === 'connecting')) {
+          console.log('Already have working connection for', socketId, 'skipping');
+          continue;
+        }
+        
         // Store user info for display
         if (user.username) {
           setPeers((prevPeers) => {
             const newPeers = new Map(prevPeers);
+            
+            // Check if this user already exists (same userId but different socketId)
+            const existingPeer = Array.from(newPeers.values()).find(peer => peer.userId === user.userId);
+            if (existingPeer) {
+              console.log('User already exists in existing users, updating socketId for:', user.username, 'from', existingPeer.socketId, 'to', socketId);
+              // Remove the old entry and add the new one
+              newPeers.delete(Array.from(newPeers.keys()).find(key => newPeers.get(key).userId === user.userId));
+            }
+            
             newPeers.set(socketId, {
               username: user.username,
               avatar_url: user.avatar_url,
               userId: user.userId,
               stream: null, // Will be set when track is received
               speaking: false,
-              muted: !!user.muted
+              muted: !!user.muted,
+              isScreenSharing: !!user.isScreenSharing // Include screen share state
             });
             return newPeers;
           });
@@ -811,20 +973,30 @@ export function useVoiceChat(channelId, socket) {
       }
     };
 
-    const handleUserJoined = async ({ socketId, userId, username, avatar_url, muted }) => {
+    const handleUserJoined = async ({ socketId, userId, username, avatar_url, muted, isScreenSharing }) => {
       console.log('User joined voice:', username || socketId);
       
       // Store user info for display
       if (username) {
         setPeers((prevPeers) => {
           const newPeers = new Map(prevPeers);
+          
+          // Check if this user already exists (same userId but different socketId)
+          const existingPeer = Array.from(newPeers.values()).find(peer => peer.userId === userId);
+          if (existingPeer) {
+            console.log('User already exists, updating socketId for:', username, 'from', existingPeer.socketId, 'to', socketId);
+            // Remove the old entry and add the new one
+            newPeers.delete(Array.from(newPeers.keys()).find(key => newPeers.get(key).userId === userId));
+          }
+          
           newPeers.set(socketId, {
             username: username,
             avatar_url: avatar_url,
             userId: userId,
             stream: null, // Will be set when track is received
             speaking: false,
-            muted: !!muted
+            muted: !!muted,
+            isScreenSharing: !!isScreenSharing // Include screen share state
           });
           return newPeers;
         });
@@ -832,6 +1004,15 @@ export function useVoiceChat(channelId, socket) {
       
       // Only create an offer if we have a local stream and we are the "older" peer
       if (localStreamRef.current && socket.id < socketId) {
+        // Check if we already have a working connection for this user
+        const existingConnection = peerConnectionsRef.current.get(socketId);
+        if (existingConnection && 
+            (existingConnection.connectionState === 'connected' || 
+             existingConnection.connectionState === 'connecting')) {
+          console.log('Already have working connection for new user', socketId, 'skipping');
+          return;
+        }
+        
         try {
           const peerConnection = createPeerConnection(socketId);
           if (!peerConnection) {
@@ -903,10 +1084,17 @@ export function useVoiceChat(channelId, socket) {
       }
 
       try {
+        console.log('Current signaling state:', peerConnection.signalingState);
+        
         if (peerConnection.signalingState === 'have-local-offer') {
           await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+          console.log('Successfully set remote description for:', from);
+        } else if (peerConnection.signalingState === 'stable') {
+          // If we're in stable state, this might be a renegotiation answer
+          console.log('Connection is stable, this might be a renegotiation answer. Ignoring.');
+          return;
         } else {
-          console.log('Queueing answer for later processing');
+          console.log('Queueing answer for later processing, current state:', peerConnection.signalingState);
           pendingAnswersRef.current.set(from, answer);
           
           // Set a timeout to clear pending answer if not processed
@@ -919,6 +1107,8 @@ export function useVoiceChat(channelId, socket) {
         }
       } catch (err) {
         console.error('Error in answer handling:', err);
+        // Clear the pending answer if there was an error
+        pendingAnswersRef.current.delete(from);
       }
     };
 
@@ -929,6 +1119,14 @@ export function useVoiceChat(channelId, socket) {
         // Queue the ICE candidate
         const pendingCandidates = pendingIceCandidatesRef.current.get(from) || [];
         pendingIceCandidatesRef.current.set(from, [...pendingCandidates, candidate]);
+        return;
+      }
+
+      // Check if connection is in a valid state
+      if (peerConnection.connectionState === 'closed' || 
+          peerConnection.connectionState === 'failed' ||
+          peerConnection.signalingState === 'closed') {
+        console.log('Peer connection is closed/failed, ignoring ICE candidate from', from);
         return;
       }
 
@@ -944,38 +1142,49 @@ export function useVoiceChat(channelId, socket) {
         await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
         console.log('Added ICE candidate from:', from);
       } catch (err) {
-        console.error('Error adding ICE candidate:', err);
+        // Don't log "Unknown ufrag" errors as they're often harmless
+        if (!err.message.includes('Unknown ufrag')) {
+          console.error('Error adding ICE candidate:', err);
+        }
       }
     };
 
     const handleUserLeft = ({ socketId, userId, username }) => {
       console.log('User left voice:', username || socketId);
+      
+      // Clean up peer connection
       const peerConnection = peerConnectionsRef.current.get(socketId);
       if (peerConnection) {
         peerConnection.close();
         peerConnectionsRef.current.delete(socketId);
       }
       
+      // Clean up audio element
       const audioElement = audioElementsRef.current.get(socketId);
       if (audioElement) {
         audioElement.srcObject = null;
         audioElement.remove();
         audioElementsRef.current.delete(socketId);
       }
+      
       // Remove volume tracking
       volumesRef.current.delete(socketId);
 
+      // Clean up remote analyser
       teardownRemoteAnalyser(socketId);
       
+      // Remove from peers
       setPeers((prevPeers) => {
         const newPeers = new Map(prevPeers);
         newPeers.delete(socketId);
+        console.log('Removed user from peers. Remaining peers:', newPeers.size);
         return newPeers;
       });
     };
 
     const handleScreenShareStart = ({ socketId, userId, username }) => {
       console.log('User started screen sharing:', username || socketId);
+      console.log('Current peer connections:', Array.from(peerConnectionsRef.current.keys()));
       setPeers((prevPeers) => {
         const newPeers = new Map(prevPeers);
         const existingPeer = newPeers.get(socketId);
@@ -998,6 +1207,26 @@ export function useVoiceChat(channelId, socket) {
       });
     };
 
+    const handleVoiceChannelInfo = ({ channelId, users, count }) => {
+      console.log('Received voice channel info for preview:', channelId, users);
+      // Convert the users array to a Map for preview mode
+      const previewPeers = new Map();
+      users.forEach(user => {
+        if (user.socketId) {
+          previewPeers.set(user.socketId, {
+            userId: user.userId,
+            username: user.username,
+            avatar_url: user.avatar_url,
+            muted: user.muted,
+            speaking: false, // We don't have speaking info in preview
+            isScreenSharing: false, // We don't have screen share info in preview
+            volume: 1
+          });
+        }
+      });
+      setPeers(previewPeers);
+    };
+
     socket.on('voice_users', handleExistingUsers);
     socket.on('user_joined_voice', handleUserJoined);
     socket.on('user_voice_mute', handleUserVoiceMute);
@@ -1007,6 +1236,7 @@ export function useVoiceChat(channelId, socket) {
     socket.on('user_left_voice', handleUserLeft);
     socket.on('screen_share_start', handleScreenShareStart);
     socket.on('screen_share_stop', handleScreenShareStop);
+    socket.on('voice_channel_info', handleVoiceChannelInfo);
 
     return () => {
       socket.off('voice_users', handleExistingUsers);
@@ -1018,30 +1248,57 @@ export function useVoiceChat(channelId, socket) {
       socket.off('user_left_voice', handleUserLeft);
       socket.off('screen_share_start', handleScreenShareStart);
       socket.off('screen_share_stop', handleScreenShareStop);
+      socket.off('voice_channel_info', handleVoiceChannelInfo);
       socket.io.off("reconnect", handleReconnect);
+      socket.io.off("disconnect", handleDisconnect);
     };
   }, [socket, channelId, isConnected]);
 
+  // Handle channel changes - switch channels without disconnecting
+  useEffect(() => {
+    if (channelId && isConnected && socket && socket.connected && !isPreview) {
+      console.log('Switching to voice channel:', channelId);
+      // Clean up existing connections before switching channels
+      cleanupConnections();
+      // Just join the new channel - the backend will handle leaving the previous one
+      socket.emit('voice_join', { channelId });
+    } else if (channelId && isPreview && socket && socket.connected) {
+      console.log('Getting voice channel info for preview:', channelId);
+      // Request voice channel info without joining
+      socket.emit('get_voice_channel_info', { channelId });
+    } else if (!channelId && isConnected) {
+      // If we're connected but no channel is selected, disconnect
+      console.log('No voice channel selected, disconnecting from voice chat');
+      disconnect();
+    }
+  }, [channelId, isConnected, socket, disconnect, isPreview]);
+
+  // Only disconnect when component unmounts (channelId becomes null)
   useEffect(() => {
     return () => {
-      console.log('Cleaning up voice chat');
-      disconnect();
+      if (!channelId) {
+        console.log('Cleaning up voice chat - no active channel');
+        disconnect();
+      }
     };
-  }, []);
+  }, [channelId]);
 
   return {
     isMuted,
+    isDeafened,
     isConnected,
     isSpeaking,
     localLevel,
     isScreenSharing,
     peers,
+    localScreenStreamRef,
     startVoiceChat,
     toggleMute,
+    toggleDeafen,
     disconnect,
     startScreenShare,
     stopScreenShare,
-    setPeerVolume: (remoteUserId, volume) => {
+    setPeerVolume: useCallback((remoteUserId, volume) => {
       try {
         // Accept up to 5.0 (500%)
         const clamped = Math.max(0, Math.min(5, Number(volume)));
@@ -1065,6 +1322,6 @@ export function useVoiceChat(channelId, socket) {
       } catch (e) {
         console.error('Error setting peer volume:', e);
       }
-    }
+    }, [])
   };
 }
