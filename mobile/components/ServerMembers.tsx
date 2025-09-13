@@ -133,7 +133,21 @@ export default function ServerMembers({ selectedServer }: ServerMembersProps) {
 
   const renderUserStatus = (member: Member) => {
     const onlineUser = onlineUsers.get(member.user_id.toString());
-    if (onlineUser?.presence) {
+    
+    // If user is not online, show offline status
+    if (!onlineUser) {
+      return (
+        <View style={styles.statusContainer}>
+          <View style={[styles.statusDot, { backgroundColor: offlineColor }]} />
+          <ThemedText style={[styles.statusText, { color: offlineColor }]}>
+            Offline
+          </ThemedText>
+        </View>
+      );
+    }
+    
+    // User is online, show their presence or default online status
+    if (onlineUser.presence) {
       switch (onlineUser.presence.type) {
         case 'playing':
           return (
@@ -164,6 +178,8 @@ export default function ServerMembers({ selectedServer }: ServerMembersProps) {
           );
       }
     }
+    
+    // Default online status
     return (
       <View style={styles.statusContainer}>
         <View style={[styles.statusDot, { backgroundColor: onlineColor }]} />

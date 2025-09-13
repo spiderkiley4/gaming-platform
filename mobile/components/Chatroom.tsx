@@ -200,7 +200,9 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
         setMessages((prev) => [...prev, msg]);
         if (!userScrolled) {
           setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
+            if (isCurrentChannel.current && flatListRef.current) {
+              flatListRef.current.scrollToEnd({ animated: true });
+            }
           }, 50);
         }
       }
@@ -209,7 +211,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
     const handleConnect = () => {
       console.log(`[ChatRoom ${channelId}] Socket connected`);
       setIsSocketConnected(true);
-      if (!hasLoadedMessages.current) {
+      if (!hasLoadedMessages.current && isCurrentChannel.current) {
         joinChannelAndFetchMessages();
       }
     };
@@ -220,6 +222,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
       
       if (retryTimeout.current) {
         clearTimeout(retryTimeout.current);
+        retryTimeout.current = undefined;
       }
       
       if (reason !== 'io client disconnect' && isCurrentChannel.current) {
@@ -232,7 +235,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
     };
 
     // Initial setup
-    if (socket.connected) {
+    if (socket.connected && isCurrentChannel.current) {
       setIsSocketConnected(true);
       if (!hasLoadedMessages.current) {
         joinChannelAndFetchMessages();
@@ -246,13 +249,19 @@ export default function ChatRoom({ channelId, userId, type, username, avatar }: 
 
     // Cleanup function
     return () => {
+      console.log(`[ChatRoom ${channelId}] Cleaning up`);
       if (retryTimeout.current) {
         clearTimeout(retryTimeout.current);
+        retryTimeout.current = undefined;
       }
-      if (channelRef.current === channelId) {
+      
+      // Always clean up listeners to prevent memory leaks
+      try {
         socket.off('connect', handleConnect);
         socket.off('disconnect', handleDisconnect);
         socket.off('new_message', handleNewMessage);
+      } catch (error) {
+        console.warn(`[ChatRoom ${channelId}] Error cleaning up listeners:`, error);
       }
     };
   }, [socket, channelId, type, userScrolled]);

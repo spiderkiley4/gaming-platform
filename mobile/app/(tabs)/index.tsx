@@ -74,6 +74,20 @@ export default function TabOneScreen() {
   const [activeTab, setActiveTab] = useState<'servers' | 'friends' | 'nitro'>('servers');
   const [currentView, setCurrentView] = useState<'servers' | 'channels' | 'chat' | 'members'>('servers');
   const [isSwipeViewOpen, setIsSwipeViewOpen] = useState(false);
+  const [isTabSwitching, setIsTabSwitching] = useState(false);
+  
+  // Debounced tab switching to prevent crashes
+  const handleTabSwitch = useCallback((newView: 'servers' | 'channels' | 'chat' | 'members') => {
+    if (isTabSwitching) return; // Prevent rapid switching
+    
+    setIsTabSwitching(true);
+    setCurrentView(newView);
+    
+    // Reset the switching flag after a short delay
+    setTimeout(() => {
+      setIsTabSwitching(false);
+    }, 100);
+  }, [isTabSwitching]);
   
   // Reset swipe position when panel state changes
   useEffect(() => {
@@ -320,8 +334,9 @@ export default function TabOneScreen() {
           borderBottomColor: borderColor
         }}>
           <TouchableOpacity
-            onPress={() => setCurrentView('servers')}
+            onPress={() => handleTabSwitch('servers')}
             style={{ marginRight: 8 }}
+            disabled={isTabSwitching}
           >
             <ThemedText style={{ color: '#3B82F6', fontSize: 14 }}>
               {currentView === 'servers' ? 'Servers' : '← Servers'}
@@ -332,8 +347,9 @@ export default function TabOneScreen() {
             <>
               <ThemedText style={{ color: mutedColor, marginHorizontal: 4 }}>›</ThemedText>
               <TouchableOpacity
-                onPress={() => setCurrentView('channels')}
+                onPress={() => handleTabSwitch('channels')}
                 style={{ marginRight: 8 }}
+                disabled={isTabSwitching}
               >
                 <ThemedText style={{ 
                   color: currentView === 'channels' ? primaryColor : mutedColor, 
@@ -349,8 +365,9 @@ export default function TabOneScreen() {
             <>
               <ThemedText style={{ color: mutedColor, marginHorizontal: 4 }}>›</ThemedText>
               <TouchableOpacity
-                onPress={() => setCurrentView('chat')}
+                onPress={() => handleTabSwitch('chat')}
                 style={{ marginRight: 8 }}
+                disabled={isTabSwitching}
               >
                 <ThemedText style={{ 
                   color: currentView === 'chat' ? primaryColor : mutedColor, 
@@ -471,7 +488,8 @@ export default function TabOneScreen() {
               marginHorizontal: 4,
               borderRadius: 8,
             }}
-            onPress={() => setCurrentView('channels')}
+            onPress={() => handleTabSwitch('channels')}
+            disabled={isTabSwitching}
           >
             <Text style={{ fontSize: 20, marginBottom: 4 }}>📝</Text>
             <ThemedText style={{ fontSize: 12, color: currentView === 'channels' ? 'white' : mutedColor }}>
@@ -488,7 +506,8 @@ export default function TabOneScreen() {
               marginHorizontal: 4,
               borderRadius: 8,
             }}
-            onPress={() => setCurrentView('chat')}
+            onPress={() => handleTabSwitch('chat')}
+            disabled={isTabSwitching}
           >
             <Text style={{ fontSize: 20, marginBottom: 4 }}>💬</Text>
             <ThemedText style={{ fontSize: 12, color: currentView === 'chat' ? 'white' : mutedColor }}>
@@ -505,7 +524,8 @@ export default function TabOneScreen() {
               marginHorizontal: 4,
               borderRadius: 8,
             }}
-            onPress={() => setCurrentView('members')}
+            onPress={() => handleTabSwitch('members')}
+            disabled={isTabSwitching}
           >
             <Text style={{ fontSize: 20, marginBottom: 4 }}>👥</Text>
             <ThemedText style={{ fontSize: 12, color: currentView === 'members' ? 'white' : mutedColor }}>
