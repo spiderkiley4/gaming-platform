@@ -1108,10 +1108,10 @@ app.post('/api/servers/:id/invites', authenticateToken, async (req, res) => {
     const serverId = parseInt(req.params.id);
     const { max_uses, expires_in } = req.body || {}; // expires_in in seconds
 
-    // Only owner can create invites for now
+    // Only owner can create invites
     const serverCheck = await db.query('SELECT owner_id FROM servers WHERE id = $1', [serverId]);
     if (serverCheck.rows.length === 0) return res.status(404).json({ error: 'Server not found' });
-    if (serverCheck.rows[0].owner_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+    if (serverCheck.rows[0].owner_id !== req.user.id) return res.status(403).json({ error: 'Only the server owner can create invites' });
 
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const generateCode = (len = 8) => Array.from({ length: len }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
@@ -1168,6 +1168,55 @@ app.post('/api/invites/:code/join', authenticateToken, async (req, res) => {
     res.json(server.rows[0]);
   } catch (error) {
     console.error('Error joining via invite:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// List invites for a server
+app.get('/api/servers/:id/invites', authenticateToken, async (req, res) => {
+  try {
+    const serverId = parseInt(req.params.id);
+
+    // Only owner can list invites
+    const serverCheck = await db.query('SELECT owner_id FROM servers WHERE id = $1', [serverId]);
+    if (serverCheck.rows.length === 0) return res.status(404).json({ error: 'Server not found' });
+    if (serverCheck.rows[0].owner_id !== req.user.id) return res.status(403).json({ error: 'Only the server owner can view invites' });
+
+    const result = await db.query(
+      'SELECT * FROM server_invites WHERE server_id = $1 ORDER BY created_at DESC',
+      [serverId]
+    );
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error listing invites:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Delete an invite
+app.delete('/api/servers/:id/invites/:inviteId', authenticateToken, async (req, res) => {
+  try {
+    const serverId = parseInt(req.params.id);
+    const inviteId = parseInt(req.params.inviteId);
+
+    // Only owner can delete invites
+    const serverCheck = await db.query('SELECT owner_id FROM servers WHERE id = $1', [serverId]);
+    if (serverCheck.rows.length === 0) return res.status(404).json({ error: 'Server not found' });
+    if (serverCheck.rows[0].owner_id !== req.user.id) return res.status(403).json({ error: 'Only the server owner can delete invites' });
+
+    // Check if invite exists and belongs to this server
+    const inviteCheck = await db.query(
+      'SELECT id FROM server_invites WHERE id = $1 AND server_id = $2',
+      [inviteId, serverId]
+    );
+    if (inviteCheck.rows.length === 0) return res.status(404).json({ error: 'Invite not found' });
+
+    await db.query('DELETE FROM server_invites WHERE id = $1', [inviteId]);
+    
+    res.status(204).send();
+  } catch (error) {
+    console.error('Error deleting invite:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

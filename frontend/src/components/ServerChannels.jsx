@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getServerChannels, createServerChannel, createServerInvite } from '../api/index';
+import { getServerChannels, createServerChannel, createServerInvite, getServerInvites, deleteServerInvite } from '../api/index';
 import { getSocket } from '../socket';
 import { resolveAvatarUrl } from '../utils/mediaUrl';
 
@@ -19,6 +19,8 @@ export default function ServerChannels({
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [invite, setInvite] = useState(null);
   const [inviteOptions, setInviteOptions] = useState({ max_uses: '', expires_in: '' });
+  const [invites, setInvites] = useState([]);
+  const [isLoadingInvites, setIsLoadingInvites] = useState(false);
 
   useEffect(() => {
     if (selectedServer) {

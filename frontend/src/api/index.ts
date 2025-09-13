@@ -128,3 +128,11 @@ export const createServerInvite = (serverId: number, options?: { max_uses?: numb
 export const joinServerByInvite = (code: string) => {
   return api.post(`/api/invites/${code}/join`);
 };
+
+export const getServerInvites = (serverId: number) => {
+  return api.get(`/api/servers/${serverId}/invites`);
+};
+
+export const deleteServerInvite = (serverId: number, inviteId: number) => {
+  return api.delete(`/api/servers/${serverId}/invites/${inviteId}`);
+};
