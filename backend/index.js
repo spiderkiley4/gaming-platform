@@ -538,6 +538,8 @@ const PORT = process.env.PORT || 3001;
 
 // Track all users and their status
 const userStatus = new Map();
+// Track multiple socket connections per user
+const userConnections = new Map();
 
 // Socket middleware to authenticate connections
 io.use((socket, next) => {
@@ -567,23 +569,32 @@ io.on('connection', async (socket) => {
     socket.user.avatar_url = null;
   }
   
-  // Add user to tracking with initial presence
-  userStatus.set(socket.user.id, {
-    userId: socket.user.id,
-    username: socket.user.username,
-    avatar_url: socket.user.avatar_url,
-    status: 'online',
-    presence: null
-  });
+  // Track this socket connection for the user
+  if (!userConnections.has(socket.user.id)) {
+    userConnections.set(socket.user.id, new Set());
+  }
+  userConnections.get(socket.user.id).add(socket.id);
   
-  // Track user connection
-  socket.broadcast.emit('user_status', { 
-    userId: socket.user.id,
-    username: socket.user.username,
-    avatar_url: socket.user.avatar_url,
-    status: 'online',
-    presence: null
-  });
+  // Add user to tracking with initial presence (only if this is their first connection)
+  const isFirstConnection = userConnections.get(socket.user.id).size === 1;
+  if (isFirstConnection) {
+    userStatus.set(socket.user.id, {
+      userId: socket.user.id,
+      username: socket.user.username,
+      avatar_url: socket.user.avatar_url,
+      status: 'online',
+      presence: null
+    });
+    
+    // Broadcast user coming online (only for first connection)
+    socket.broadcast.emit('user_status', { 
+      userId: socket.user.id,
+      username: socket.user.username,
+      avatar_url: socket.user.avatar_url,
+      status: 'online',
+      presence: null
+    });
+  }
 
   // Handle presence updates
   socket.on('update_presence', ({ presence }) => {
@@ -979,20 +990,31 @@ io.on('connection', async (socket) => {
   socket.on('disconnect', (reason) => {
     console.log('User disconnected:', socket.user.username, 'Reason:', reason);
     
-    // Update user status to offline
-    userStatus.set(socket.user.id, {
-      userId: socket.user.id,
-      username: socket.user.username,
-      avatar_url: socket.user.avatar_url,
-      status: 'offline'
-    });
-    
-    io.emit('user_status', { 
-      userId: socket.user.id, 
-      username: socket.user.username,
-      avatar_url: socket.user.avatar_url,
-      status: 'offline' 
-    });
+    // Remove this socket connection from the user's connections
+    if (userConnections.has(socket.user.id)) {
+      userConnections.get(socket.user.id).delete(socket.id);
+      
+      // If this was the last connection, set user to offline
+      if (userConnections.get(socket.user.id).size === 0) {
+        userConnections.delete(socket.user.id);
+        
+        // Update user status to offline
+        userStatus.set(socket.user.id, {
+          userId: socket.user.id,
+          username: socket.user.username,
+          avatar_url: socket.user.avatar_url,
+          status: 'offline'
+        });
+        
+        // Broadcast user going offline
+        io.emit('user_status', { 
+          userId: socket.user.id, 
+          username: socket.user.username,
+          avatar_url: socket.user.avatar_url,
+          status: 'offline' 
+        });
+      }
+    }
   });
 
   // Handle errors
