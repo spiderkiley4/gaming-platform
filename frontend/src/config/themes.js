@@ -44,6 +44,22 @@ export const defaultThemes = {
       // Special colors
       overlay: 'rgba(15, 20, 25, 0.8)',
       shadow: 'rgba(15, 20, 25, 0.6)',
+      
+      // Voice chat status colors
+      muted: '#f44336',
+      deafened: '#ff9800',
+      speaking: '#4caf50',
+      screenSharing: '#9c27b0',
+      
+      // Avatar and user colors
+      avatar: '#5865f2',
+      avatarText: '#ffffff',
+      
+      // Toggle switch colors
+      toggleBackground: '#4f545c',
+      toggleActive: '#3b82f6',
+      toggleThumb: '#ffffff',
+      toggleRing: '#3b82f6',
     }
   },
   
@@ -91,6 +107,22 @@ export const defaultThemes = {
       // Special colors
       overlay: 'rgba(13, 71, 161, 0.4)',
       shadow: 'rgba(13, 71, 161, 0.2)',
+      
+      // Voice chat status colors
+      muted: '#f44336',
+      deafened: '#ff9800',
+      speaking: '#4caf50',
+      screenSharing: '#9c27b0',
+      
+      // Avatar and user colors
+      avatar: '#5865f2',
+      avatarText: '#ffffff',
+      
+      // Toggle switch colors
+      toggleBackground: '#90caf9',
+      toggleActive: '#3b82f6',
+      toggleThumb: '#ffffff',
+      toggleRing: '#3b82f6',
     }
   }
 };
@@ -140,6 +172,22 @@ export const customThemeTemplate = {
     // Special colors
     overlay: 'rgba(15, 20, 25, 0.8)',
     shadow: 'rgba(15, 20, 25, 0.6)',
+    
+    // Voice chat status colors
+    muted: '#f44336',
+    deafened: '#ff9800',
+    speaking: '#4caf50',
+    screenSharing: '#9c27b0',
+    
+    // Avatar and user colors
+    avatar: '#5865f2',
+    avatarText: '#ffffff',
+    
+    // Toggle switch colors
+    toggleBackground: '#4f545c',
+    toggleActive: '#3b82f6',
+    toggleThumb: '#ffffff',
+    toggleRing: '#3b82f6',
   }
 };
 
@@ -176,6 +224,18 @@ export const colorCategories = {
   special: {
     name: 'Special',
     colors: ['overlay', 'shadow']
+  },
+  voiceChat: {
+    name: 'Voice Chat',
+    colors: ['muted', 'deafened', 'speaking', 'screenSharing']
+  },
+  avatars: {
+    name: 'Avatars',
+    colors: ['avatar', 'avatarText']
+  },
+  toggles: {
+    name: 'Toggles',
+    colors: ['toggleBackground', 'toggleActive', 'toggleThumb', 'toggleRing']
   }
 };
 

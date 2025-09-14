@@ -34,6 +34,22 @@
   
   --color-overlay: rgba(0, 0, 0, 0.5);
   --color-shadow: rgba(0, 0, 0, 0.3);
+  
+  /* Voice chat status colors */
+  --color-muted: #f44336;
+  --color-deafened: #ff9800;
+  --color-speaking: #4caf50;
+  --color-screenSharing: #9c27b0;
+  
+  /* Avatar and user colors */
+  --color-avatar: #5865f2;
+  --color-avatarText: #ffffff;
+  
+  /* Toggle switch colors */
+  --color-toggleBackground: #4f545c;
+  --color-toggleActive: #3b82f6;
+  --color-toggleThumb: #ffffff;
+  --color-toggleRing: #3b82f6;
 }
 
 /* Theme utility classes */
@@ -69,6 +85,42 @@
 
 .bg-overlay { background-color: var(--color-overlay); }
 .shadow-theme { box-shadow: 0 4px 6px var(--color-shadow); }
+
+/* Voice chat status colors */
+.bg-muted { background-color: var(--color-muted); }
+.bg-deafened { background-color: var(--color-deafened); }
+.bg-speaking { background-color: var(--color-speaking); }
+.bg-screenSharing { background-color: var(--color-screenSharing); }
+.text-muted { color: var(--color-muted); }
+.text-deafened { color: var(--color-deafened); }
+.text-speaking { color: var(--color-speaking); }
+.text-screenSharing { color: var(--color-screenSharing); }
+
+/* Avatar colors */
+.bg-avatar { background-color: var(--color-avatar); }
+.text-avatarText { color: var(--color-avatarText); }
+
+/* Toggle colors */
+.bg-toggleBackground { background-color: var(--color-toggleBackground); }
+.bg-toggleActive { background-color: var(--color-toggleActive); }
+.bg-toggleThumb { background-color: var(--color-toggleThumb); }
+.border-toggleRing { border-color: var(--color-toggleRing); }
+
+/* Force toggle active state to be blue */
+.peer:checked ~ .peer-checked\:bg-toggleActive {
+  background-color: #3b82f6 !important;
+}
+
+/* Alternative approach for toggle switches */
+input[type="checkbox"]:checked + div {
+  background-color: #3b82f6 !important;
+}
+
+/* Ensure toggle thumb (circle) is white */
+input[type="checkbox"] + div::after {
+  background-color: #ffffff !important;
+  border-color: #ffffff !important;
+}
 
 /* Theme-specific classes */
 .theme-dark {

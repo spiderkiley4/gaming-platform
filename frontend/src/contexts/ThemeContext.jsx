@@ -61,7 +61,10 @@ export const ThemeProvider = ({ children }) => {
   };
 
   const resetToDefault = () => {
+    // Reset custom theme to the default template
+    setCustomTheme(customThemeTemplate);
     setIsCustomTheme(false);
+    localStorage.setItem('app-custom-theme', JSON.stringify(customThemeTemplate));
     localStorage.setItem('app-is-custom-theme', 'false');
   };
 

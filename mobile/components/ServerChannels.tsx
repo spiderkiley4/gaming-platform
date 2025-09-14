@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert, TextInput, M
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
 import { useThemeColor } from '@/hooks/useThemeColor';
-import { getServerChannels, createServerChannel, createServerInvite } from '@/api';
+import { getServerChannels, createServerChannel, createServerInvite, getServerInvites, deleteServerInvite } from '@/api';
 import { useAuth } from '../context/AuthContext';
 
 interface Channel {
@@ -43,6 +43,8 @@ export default function ServerChannels({
   const [isLoading, setIsLoading] = useState(false);
   const [invite, setInvite] = useState<{ code: string } | null>(null);
   const [inviteOptions, setInviteOptions] = useState({ max_uses: '', expires_in: '' });
+  const [invites, setInvites] = useState<any[]>([]);
+  const [isLoadingInvites, setIsLoadingInvites] = useState(false);
   const { socket } = useAuth();
   
   // Theme colors
@@ -86,6 +88,49 @@ export default function ServerChannels({
     }
   };
 
+  const fetchInvites = async () => {
+    if (!selectedServer) return;
+    
+    setIsLoadingInvites(true);
+    try {
+      const response = await getServerInvites(selectedServer.id);
+      setInvites(response.data);
+    } catch (error) {
+      console.error('Error fetching invites:', error);
+    } finally {
+      setIsLoadingInvites(false);
+    }
+  };
+
+  const handleDeleteInvite = async (inviteId: number) => {
+    if (!selectedServer) return;
+    
+    try {
+      await deleteServerInvite(selectedServer.id, inviteId);
+      setInvites(prev => prev.filter(invite => invite.id !== inviteId));
+    } catch (error) {
+      console.error('Error deleting invite:', error);
+      Alert.alert('Error', 'Failed to delete invite');
+    }
+  };
+
+  const handleCreateInvite = async () => {
+    if (!selectedServer) return;
+    
+    try {
+      const res = await createServerInvite(selectedServer.id, {
+        max_uses: inviteOptions.max_uses ? parseInt(inviteOptions.max_uses) : undefined,
+        expires_in: inviteOptions.expires_in ? parseInt(inviteOptions.expires_in) : undefined
+      });
+      setInvite(res.data);
+      // Refresh the invites list
+      fetchInvites();
+    } catch (err) {
+      Alert.alert('Error', 'Failed to create invite');
+      console.error(err);
+    }
+  };
+
   const handleCreateChannel = async () => {
     if (!newChannelName.trim() || !selectedServer) return;
     
@@ -116,20 +161,6 @@ export default function ServerChannels({
     }
   };
 
-  const handleCreateInvite = async () => {
-    if (!selectedServer) return;
-    
-    try {
-      const res = await createServerInvite(selectedServer.id, {
-        max_uses: inviteOptions.max_uses ? parseInt(inviteOptions.max_uses) : undefined,
-        expires_in: inviteOptions.expires_in ? parseInt(inviteOptions.expires_in) : undefined
-      });
-      setInvite(res.data);
-    } catch (err) {
-      Alert.alert('Error', 'Failed to create invite');
-      console.error(err);
-    }
-  };
 
   const renderChannel = (channel: Channel) => (
     <TouchableOpacity
@@ -196,7 +227,10 @@ export default function ServerChannels({
         </View>
         <TouchableOpacity
           style={[styles.inviteButton, { backgroundColor: successColor }]}
-          onPress={() => setShowInviteModal(true)}
+          onPress={() => {
+            setShowInviteModal(true);
+            fetchInvites();
+          }}
         >
           <Text style={[styles.inviteButtonText, { color: successTextColor }]}>Invite</Text>
         </TouchableOpacity>
@@ -317,57 +351,121 @@ export default function ServerChannels({
         </View>
       </Modal>
 
-      {/* Create Invite Modal */}
+      {/* Invite Management Modal */}
       <Modal
         visible={showInviteModal}
         transparent
         animationType="fade"
-        onRequestClose={() => { setShowInviteModal(false); setInvite(null); }}
+        onRequestClose={() => { 
+          setShowInviteModal(false); 
+          setInvite(null); 
+          setInviteOptions({ max_uses: '', expires_in: '' });
+        }}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: cardColor }]}>
-            <ThemedText type="title" style={styles.modalTitle}>Create Invite</ThemedText>
+          <View style={[styles.modalContent, { backgroundColor: cardColor, maxHeight: '80%' }]}>
+            <ThemedText type="title" style={styles.modalTitle}>Manage Invites</ThemedText>
             
-            <View style={styles.inviteOptions}>
-              <TextInput
-                style={[styles.input, { backgroundColor: cardSecondary, color: textColor }]}
-                placeholder="Max Uses (optional)"
-                placeholderTextColor={textMuted}
-                value={inviteOptions.max_uses}
-                onChangeText={(text) => setInviteOptions(prev => ({ ...prev, max_uses: text }))}
-                keyboardType="numeric"
-              />
+            {/* Create New Invite Section */}
+            <View style={[styles.inviteCreateSection, { backgroundColor: cardSecondary }]}>
+              <ThemedText style={[styles.sectionTitle, { color: textMuted }]}>Create New Invite</ThemedText>
               
-              <TextInput
-                style={[styles.input, { backgroundColor: cardSecondary, color: textColor }]}
-                placeholder="Expires In (seconds)"
-                placeholderTextColor={textMuted}
-                value={inviteOptions.expires_in}
-                onChangeText={(text) => setInviteOptions(prev => ({ ...prev, expires_in: text }))}
-                keyboardType="numeric"
-              />
-            </View>
-            
-            {invite && (
-              <View style={[styles.inviteCodeContainer, { backgroundColor: cardSecondary }]}>
-                <ThemedText style={[styles.inviteCodeLabel, { color: textMuted }]}>Invite Code:</ThemedText>
-                <ThemedText style={[styles.inviteCode, { color: textColor }]}>{invite.code}</ThemedText>
+              <View style={styles.inviteOptions}>
+                <TextInput
+                  style={[styles.input, { backgroundColor: cardColor, color: textColor }]}
+                  placeholder="Max Uses (optional)"
+                  placeholderTextColor={textMuted}
+                  value={inviteOptions.max_uses}
+                  onChangeText={(text) => setInviteOptions(prev => ({ ...prev, max_uses: text }))}
+                  keyboardType="numeric"
+                />
+                
+                <TextInput
+                  style={[styles.input, { backgroundColor: cardColor, color: textColor }]}
+                  placeholder="Expires In (seconds)"
+                  placeholderTextColor={textMuted}
+                  value={inviteOptions.expires_in}
+                  onChangeText={(text) => setInviteOptions(prev => ({ ...prev, expires_in: text }))}
+                  keyboardType="numeric"
+                />
               </View>
-            )}
+              
+              {invite && (
+                <View style={[styles.inviteCodeContainer, { backgroundColor: cardColor }]}>
+                  <ThemedText style={[styles.inviteCodeLabel, { color: textMuted }]}>New Invite Code:</ThemedText>
+                  <ThemedText style={[styles.inviteCode, { color: textColor }]}>{invite.code}</ThemedText>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.generateButton, { backgroundColor: successColor }]}
+                onPress={handleCreateInvite}
+              >
+                <Text style={[styles.generateButtonText, { color: successTextColor }]}>Generate Invite</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Existing Invites List */}
+            <View style={styles.invitesListSection}>
+              <ThemedText style={[styles.sectionTitle, { color: textMuted }]}>Existing Invites</ThemedText>
+              
+              {isLoadingInvites ? (
+                <View style={styles.loadingContainer}>
+                  <ThemedText style={[styles.loadingText, { color: textMuted }]}>Loading invites...</ThemedText>
+                </View>
+              ) : invites.length === 0 ? (
+                <View style={styles.loadingContainer}>
+                  <ThemedText style={[styles.loadingText, { color: textMuted }]}>No invites created yet</ThemedText>
+                </View>
+              ) : (
+                <FlatList
+                  data={invites}
+                  keyExtractor={(item) => item.id.toString()}
+                  style={styles.invitesList}
+                  showsVerticalScrollIndicator={true}
+                  renderItem={({ item: inv }) => {
+                    const isExpired = inv.expires_at && new Date(inv.expires_at) < new Date();
+                    const isExhausted = inv.max_uses && inv.uses >= inv.max_uses;
+                    const status = isExpired ? 'expired' : isExhausted ? 'exhausted' : 'active';
+                    const statusColor = status === 'active' ? '#10B981' : status === 'expired' ? '#EF4444' : '#F59E0B';
+                    
+                    return (
+                      <View style={[styles.inviteItem, { backgroundColor: cardSecondary }]}>
+                        <View style={styles.inviteItemContent}>
+                          <ThemedText style={[styles.inviteCode, { color: textColor }]}>{inv.code}</ThemedText>
+                          <ThemedText style={[styles.inviteDetails, { color: textMuted }]}>
+                            Uses: {inv.uses || 0}{inv.max_uses ? `/${inv.max_uses}` : '/∞'}
+                            {inv.expires_at && (
+                              <Text> • Expires: {new Date(inv.expires_at).toLocaleDateString()}</Text>
+                            )}
+                          </ThemedText>
+                          <ThemedText style={[styles.inviteStatus, { color: statusColor }]}>
+                            {status.charAt(0).toUpperCase() + status.slice(1)}
+                          </ThemedText>
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.deleteButton, { backgroundColor: errorColor }]}
+                          onPress={() => handleDeleteInvite(inv.id)}
+                        >
+                          <Text style={[styles.deleteButtonText, { color: errorTextColor }]}>🗑️</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }}
+                />
+              )}
+            </View>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, { backgroundColor: mutedColor }]}
-                onPress={() => { setShowInviteModal(false); setInvite(null); }}
+                onPress={() => { 
+                  setShowInviteModal(false); 
+                  setInvite(null); 
+                  setInviteOptions({ max_uses: '', expires_in: '' });
+                }}
               >
                 <Text style={[styles.cancelButtonText, { color: mutedTextColor }]}>Close</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: successColor }]}
-                onPress={handleCreateInvite}
-              >
-                <Text style={[styles.createButtonText, { color: successTextColor }]}>Generate</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -565,5 +663,65 @@ const styles = StyleSheet.create({
   },
   createButtonText: {
     fontWeight: '600',
+  },
+  inviteCreateSection: {
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  generateButton: {
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  generateButtonText: {
+    fontWeight: '600',
+  },
+  invitesListSection: {
+    flex: 1,
+    minHeight: 200,
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 14,
+  },
+  invitesList: {
+    flex: 1,
+  },
+  inviteItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  inviteItemContent: {
+    flex: 1,
+  },
+  inviteDetails: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  inviteStatus: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  deleteButton: {
+    padding: 8,
+    borderRadius: 6,
+    marginLeft: 12,
+  },
+  deleteButtonText: {
+    fontSize: 16,
   },
 });

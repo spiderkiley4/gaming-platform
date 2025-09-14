@@ -35,7 +35,7 @@ const ScreenShareVideo = ({ videoStream, username }) => {
   }, [videoStream]);
 
   return (
-    <div className="relative w-full h-full bg-black flex items-center justify-center">
+    <div className="relative w-full h-full bg-background flex items-center justify-center">
       <video
         ref={videoRef}
         className="max-w-full max-h-full object-contain"
@@ -49,7 +49,7 @@ const ScreenShareVideo = ({ videoStream, username }) => {
           }
         }}
       />
-      <div className="absolute top-4 left-4 bg-black bg-opacity-70 text-white text-sm px-3 py-2 rounded-lg">
+      <div className="absolute top-4 left-4 bg-overlay text-on-surface text-sm px-3 py-2 rounded-lg">
         {username}'s Screen
       </div>
     </div>
@@ -331,7 +331,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
       if (part.startsWith('@')) {
         const username = part.slice(1);
         return (
-          <span key={index} className="text-blue-400 font-medium bg-blue-500/20 px-1.5 py-0.5 rounded">
+          <span key={index} className="text-primary font-medium bg-primary/20 px-1.5 py-0.5 rounded">
             {part}
           </span>
         );
@@ -369,22 +369,22 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
         );
       case 'video':
         return (
-          <div className="max-w-[400px] rounded overflow-hidden bg-gray-700">
+          <div className="max-w-[400px] rounded overflow-hidden bg-surface-variant">
             <VideoPlayer src={resolved} />
           </div>
         );
       case 'file':
         const fileName = (resolved || message.content).split('/').pop();
         return (
-          <div className="flex items-center gap-2 p-2 bg-gray-700 rounded">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="flex items-center gap-2 p-2 bg-surface-variant rounded">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-on-surface-variant" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
             <a 
               href={resolved}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-400 hover:underline truncate"
+              className="text-primary hover:underline truncate"
             >
               {fileName}
             </a>
@@ -392,7 +392,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
         );
       default:
         return (
-          <div className="text-white break-words">
+          <div className="text-on-primary break-words">
             {formatMessageContent(message.content, message)}
           </div>
         );
@@ -451,14 +451,14 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
     });
     
     return (
-      <div className="flex flex-col h-full bg-gray-900">
+      <div className="flex flex-col h-full bg-background">
 
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {(localScreenSharing || screenSharingPeer) ? (
             // Screen Share View with users at bottom
             <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 bg-black flex items-center justify-center relative overflow-hidden">
+              <div className="flex-1 bg-background flex items-center justify-center relative overflow-hidden">
                 {localScreenSharing ? (
                   // Show local user's screen share
                   <ScreenShareVideo 
@@ -475,13 +475,13 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
               </div>
               
               {/* Users at bottom when screen sharing */}
-              <div className="p-4 bg-gray-800 border-t border-gray-700">
+              <div className="p-4 bg-surface border-t border-outline-variant">
                 {/* Participants grid at bottom - smaller version of normal view */}
                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
                    {allParticipants.map((participant) => (
                      <div 
                        key={participant.id} 
-                       className={`relative group flex items-center justify-center bg-gray-800 rounded-xl p-3 hover:bg-gray-750 transition-colors cursor-pointer ${
+                       className={`relative group flex items-center justify-center bg-surface-variant rounded-xl p-3 hover:bg-surface-container transition-colors cursor-pointer ${
                          participant.isSpeaking ? 'shadow-[0_0_0_3px_rgba(34,197,94,1)]' : ''
                        }`}
                        title={participant.isCurrentUser ? `${participant.username} (You)` : participant.username}
@@ -495,21 +495,21 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                                className="w-full h-full object-cover"
                              />
                            ) : (
-                             <div className="w-full h-full bg-gray-600 flex items-center justify-center">
-                               <span className="text-white font-medium text-lg">
+                             <div className="w-full h-full bg-surface-container flex items-center justify-center">
+                               <span className="text-on-surface font-medium text-lg">
                                  {participant.username.charAt(0).toUpperCase()}
                                </span>
                              </div>
                            )}
                          </div>
-                         <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-gray-800 ${
-                           participant.isMuted ? 'bg-red-500' : 
-                           participant.isDeafened ? 'bg-orange-500' :
-                           participant.isSpeaking ? 'bg-green-500' : 'bg-gray-400'
+                         <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-surface ${
+                           participant.isMuted ? 'bg-muted' : 
+                           participant.isDeafened ? 'bg-deafened' :
+                           participant.isSpeaking ? 'bg-speaking' : 'bg-surface-container'
                          }`}></div>
                          {participant.isScreenSharing && (
-                           <div className="absolute top-0 right-0 w-4 h-4 bg-purple-500 rounded-full border-2 border-gray-800 flex items-center justify-center">
-                             <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           <div className="absolute top-0 right-0 w-4 h-4 bg-screenSharing rounded-full border-2 border-surface flex items-center justify-center">
+                             <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                              </svg>
                            </div>
@@ -517,9 +517,9 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                        </div>
                        
                        {/* Hover tooltip */}
-                       <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
+                       <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-surface text-on-surface text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-10">
                          {participant.isCurrentUser ? `${participant.username} (You)` : participant.username}
-                         <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+                         <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-surface"></div>
                        </div>
                      </div>
                    ))}
@@ -532,13 +532,13 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
               {!isConnected ? (
                 // Join button in center when not connected
                 <div className="flex flex-col items-center justify-center h-full">
-                  <div className="w-24 h-24 bg-gray-700 rounded-full flex items-center justify-center mb-6">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="w-24 h-24 bg-surface-variant rounded-full flex items-center justify-center mb-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-on-surface-variant" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
                   </div>
-                  <h3 className="text-2xl font-semibold text-white mb-2">Voice Channel</h3>
-                  <p className="text-gray-400 mb-8 text-center max-w-md">
+                  <h3 className="text-2xl font-semibold text-on-surface mb-2">Voice Channel</h3>
+                  <p className="text-on-surface-variant mb-8 text-center max-w-md">
                     {isPreview 
                       ? "Right-click to preview this voice channel. Click the button below to join the conversation."
                       : "You're not connected to voice. Click the button below to join the conversation."
@@ -546,7 +546,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                   </p>
                   <button
                     onClick={startVoiceChat}
-                    className="px-8 py-4 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg flex items-center gap-3 transition-colors"
+                    className="px-8 py-4 bg-success hover:bg-success/80 text-on-primary font-medium rounded-lg flex items-center gap-3 transition-colors"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
@@ -560,7 +560,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                    {/* Large user grid filling most space */}
                   <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {allParticipants.map((participant) => (
-                      <div key={participant.id} className={`flex flex-col items-center justify-center bg-gray-800 rounded-xl p-6 hover:bg-gray-750 transition-colors ${
+                      <div key={participant.id} className={`flex flex-col items-center justify-center bg-surface-variant rounded-xl p-6 hover:bg-surface-container transition-colors ${
                         participant.isSpeaking ? 'shadow-[0_0_0_4px_rgba(34,197,94,1)]' : ''
                       }`}>
                         <div className="relative w-24 h-24 rounded-full mb-4">
@@ -572,28 +572,28 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                                 className="w-full h-full object-cover"
                               />
                             ) : (
-                              <div className="w-full h-full bg-gray-600 flex items-center justify-center">
-                                <span className="text-white font-medium text-2xl">
+                              <div className="w-full h-full bg-surface-container flex items-center justify-center">
+                                <span className="text-on-surface font-medium text-2xl">
                                   {participant.username.charAt(0).toUpperCase()}
                                 </span>
                               </div>
                             )}
                           </div>
-                          <div className={`absolute bottom-0 right-0 w-6 h-6 rounded-full border-4 border-gray-800 ${
-                            participant.isMuted ? 'bg-red-500' : 
-                            participant.isDeafened ? 'bg-orange-500' :
-                            participant.isSpeaking ? 'bg-green-500' : 'bg-gray-400'
+                          <div className={`absolute bottom-0 right-0 w-6 h-6 rounded-full border-4 border-surface ${
+                            participant.isMuted ? 'bg-muted' : 
+                            participant.isDeafened ? 'bg-deafened' :
+                            participant.isSpeaking ? 'bg-speaking' : 'bg-surface-container'
                           }`}></div>
                         </div>
-                        <h4 className="text-white font-medium text-lg text-center mb-1">
+                        <h4 className="text-on-surface font-medium text-lg text-center mb-1">
                           {participant.isCurrentUser ? `${participant.username} (You)` : participant.username}
                         </h4>
-                        <div className="flex items-center gap-2 text-sm text-gray-400">
-                          {participant.isMuted && <span className="text-red-400">Muted</span>}
-                          {participant.isDeafened && <span className="text-orange-400">Deafened</span>}
-                          {participant.isSpeaking && <span className="text-green-400">Speaking</span>}
+                        <div className="flex items-center gap-2 text-sm text-on-surface-variant">
+                          {participant.isMuted && <span className="text-muted">Muted</span>}
+                          {participant.isDeafened && <span className="text-deafened">Deafened</span>}
+                          {participant.isSpeaking && <span className="text-speaking">Speaking</span>}
                           {participant.isScreenSharing && (
-                            <div className="flex items-center gap-1 text-purple-400">
+                            <div className="flex items-center gap-1 text-screenSharing">
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                               </svg>
@@ -611,7 +611,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
         </div>
 
         {/* Bottom Controls - Discord Style */}
-        <div className="flex-shrink-0 p-4 bg-gray-800 border-t border-gray-700">
+        <div className="flex-shrink-0 p-4 bg-surface border-t border-outline-variant">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {isConnected ? (
@@ -619,17 +619,17 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                   <button
                     onClick={toggleMute}
                     className={`p-3 rounded-full ${
-                      isMuted ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-600 hover:bg-gray-500'
+                      isMuted ? 'bg-muted hover:bg-muted/80' : 'bg-surface-variant hover:bg-surface-container'
                     }`}
                     title={isMuted ? 'Unmute' : 'Mute'}
                   >
                     {isMuted ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                       </svg>
                     ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                       </svg>
                     )}
@@ -638,17 +638,17 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                   <button
                     onClick={toggleDeafen}
                     className={`p-3 rounded-full ${
-                      isDeafened ? 'bg-orange-500 hover:bg-orange-600' : 'bg-gray-600 hover:bg-gray-500'
+                      isDeafened ? 'bg-deafened hover:bg-deafened/80' : 'bg-surface-variant hover:bg-surface-container'
                     }`}
                     title={isDeafened ? 'Undeafen' : 'Deafen'}
                   >
                     {isDeafened ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                       </svg>
                     ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                       </svg>
                     )}
@@ -657,16 +657,16 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                   <button
                     onClick={isScreenSharing ? stopScreenShare : startScreenShare}
                     className={`p-3 rounded-full ${
-                      isScreenSharing ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-600 hover:bg-gray-500'
+                      isScreenSharing ? 'bg-error hover:bg-error/80' : 'bg-surface-variant hover:bg-surface-container'
                     }`}
                     title={isScreenSharing ? 'Stop Screen Share' : 'Start Screen Share'}
                   >
                     {isScreenSharing ? (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     ) : (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
                     )}
@@ -675,10 +675,10 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
               ) : (
                 <button
                   onClick={startVoiceChat}
-                  className="p-3 rounded-full bg-green-500 hover:bg-green-600"
+                  className="p-3 rounded-full bg-success hover:bg-success/80"
                   title="Join Voice Channel"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                   </svg>
                 </button>
@@ -688,10 +688,10 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
             {isConnected && (
               <button
                 onClick={disconnect}
-                className="p-3 rounded-full bg-red-500 hover:bg-red-600"
+                className="p-3 rounded-full bg-error hover:bg-error/80"
                 title="Disconnect"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 3l18 18" />
                 </svg>
               </button>
@@ -736,7 +736,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
   };
 
   return (
-    <div className="flex flex-col bg-gray-800 p-4 rounded-lg h-[calc(100vh-140px)]">
+    <div className="flex flex-col bg-surface p-4 rounded-lg h-[calc(100vh-140px)]">
       <div className="flex flex-col h-[calc(100vh-100px)] overflow-y-auto -mr-4 pr-4">
         {messages.map((message, index) => {
           const currentDate = new Date(message.created_at).toDateString();
@@ -747,12 +747,12 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
             <div key={message.id}>
               {showDateHeader && (
                 <div className="text-center my-4">
-                  <span className="bg-gray-700 text-gray-300 px-3 py-1 rounded-full text-sm">
+                  <span className="bg-surface-variant text-on-surface-variant px-3 py-1 rounded-full text-sm">
                     {formatDate(message.created_at)}
                   </span>
                 </div>
               )}
-              <div className={`p-2 mb-2 mr-4 rounded w-full hover:bg-gray-700/60 flex items-start gap-3`}>
+              <div className={`p-2 mb-2 mr-4 rounded w-full hover:bg-surface-variant/60 flex items-start gap-3`}>
                 {message.avatar_url ? (
                   <img 
                     src={resolveAvatarUrl(message.avatar_url)} 
@@ -760,7 +760,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                     className="w-12 h-12 rounded-full flex-shrink-0"
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center flex-shrink-0">
                     <span>
                       {message.username ? message.username.charAt(0).toUpperCase() : `U${message.user_id}`}
                     </span>
@@ -768,10 +768,10 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                 )}
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-gray-300 font-medium">
+                    <span className="text-on-surface font-medium">
                       {message.username || `User #${message.user_id}`}
                     </span>
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-on-surface-variant">
                       {new Date(message.created_at).toLocaleTimeString()}
                     </span>
                   </div>
@@ -788,26 +788,26 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
       <div className="flex items-center mt-4">
         {/* Preview section for selected file */}
         {selectedFile && (
-          <div className="flex items-center justify-between bg-gray-700 p-2 rounded mb-2">
-            <span className="text-white">{selectedFile.name}</span>
-            <button onClick={removeSelectedFile} className="text-red-500">
+          <div className="flex items-center justify-between bg-surface-variant p-2 rounded mb-2">
+            <span className="text-on-primary">{selectedFile.name}</span>
+            <button onClick={removeSelectedFile} className="text-error">
               X
             </button>
           </div>
         )}
         <div className="relative w-full">
           {mentionSuggestions.length > 0 && (
-            <div className="absolute bottom-full mb-2 bg-gray-700 rounded shadow-lg max-h-40 overflow-y-auto w-64">
+            <div className="absolute bottom-full mb-2 bg-surface-variant rounded shadow-lg max-h-40 overflow-y-auto w-64">
               {mentionSuggestions.map((user) => (
                 <div
                   key={user.userId}
-                  className="p-2 hover:bg-gray-600 cursor-pointer flex items-center gap-2"
+                  className="p-2 hover:bg-surface-container cursor-pointer flex items-center gap-2"
                   onClick={() => handleMentionSelect(user.username)}
                 >
                   {user.avatar_url ? (
                     <img src={resolveAvatarUrl(user.avatar_url)} alt="" className="w-6 h-6 rounded-full" />
                   ) : (
-                    <div className="w-6 h-6 rounded-full bg-gray-500 flex items-center justify-center text-sm">
+                    <div className="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-sm">
                       {user.username.charAt(0).toUpperCase()}
                     </div>
                   )}
@@ -821,7 +821,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
             <input
               ref={inputRef}
               value={messageInput}
-              className="flex flex-1 p-2 border border-gray-600 bg-gray-700 rounded text-white"
+              className="flex flex-1 p-2 border border-outline-variant bg-surface-variant rounded text-on-primary"
               onChange={handleInputChange}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -843,12 +843,12 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
             />
             <button 
               onClick={() => fileInputRef.current.click()}
-              className="ml-2 p-2 bg-gray-600 rounded text-white hover:bg-gray-500"
+              className="ml-2 p-2 bg-surface-variant rounded text-on-primary hover:bg-surface-container"
               disabled={isUploading}
             >
               {isUploading ? (
                 <span className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-on-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
@@ -856,7 +856,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
                 </span>
               ) : selectedFile ? (
                 <span className="flex items-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </span>
@@ -868,7 +868,7 @@ export default function ChatRoom({ channelId, userId, type, username, avatar, se
             </button>
             <button 
               onClick={sendMessage} 
-              className="ml-2 p-2 w-20 bg-blue-500 rounded text-white hover:bg-blue-600"
+              className="ml-2 p-2 w-20 bg-primary rounded text-on-primary hover:bg-primary-container"
               disabled={isUploading || (!messageInput.trim() && !selectedFile)}
             >
               Send

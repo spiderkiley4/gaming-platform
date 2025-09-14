@@ -64,11 +64,11 @@ export default function VideoPlayer({ src }) {
         src={src}
       />
       <div className="flex flex-wrap items-center gap-2 mt-2 p-2">
-        <button onClick={togglePlayPause} className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded">
+        <button onClick={togglePlayPause} className="px-2 py-1 bg-primary hover:bg-primary-container text-on-primary rounded">
           {isPlaying ? 'Pause' : 'Play'}
         </button>
         <div className="flex items-center gap-1 min-w-[120px]">
-          <span className="text-white text-sm">Volume:</span>
+          <span className="text-on-surface text-sm">Volume:</span>
           <input
             type="range"
             min="0"
@@ -80,7 +80,7 @@ export default function VideoPlayer({ src }) {
           />
         </div>
         <div className="flex items-center gap-1 flex-1">
-          <span className="text-white text-sm">Time:</span>
+          <span className="text-on-surface text-sm">Time:</span>
           <input
             type="range"
             min="0"
@@ -90,7 +90,7 @@ export default function VideoPlayer({ src }) {
             onChange={handleSeek}
             className="flex-1"
           />
-          <span className="text-white text-sm">{Math.floor(currentTime)}s</span>
+          <span className="text-on-surface text-sm">{Math.floor(currentTime)}s</span>
         </div>
       </div>
     </div>

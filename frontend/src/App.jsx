@@ -306,13 +306,13 @@ function AppContent() {
     if (!showProfileSettings) return null;
     
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="bg-gray-800/70 backdrop-blur-md p-6 rounded-lg w-96 border border-gray-700">
+      <div className="fixed inset-0 bg-overlay backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="bg-surface/70 backdrop-blur-md p-6 rounded-lg w-96 border border-outline-variant">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">Profile Settings</h2>
             <button 
               onClick={() => setShowProfileSettings(false)}
-              className="text-gray-400 hover:text-gray-200 cursor-pointer"
+              className="text-on-surface-variant hover:text-on-surface cursor-pointer"
             >
               ✕
             </button>
@@ -330,12 +330,12 @@ function AppContent() {
                       className="w-20 h-20 rounded-full group-hover:opacity-80 transition-opacity"
                     />
                   ) : (
-                    <div className="w-20 h-20 rounded-full bg-gray-600 flex items-center justify-center group-hover:bg-gray-500 transition-colors">
+                    <div className="w-20 h-20 rounded-full bg-surface-variant flex items-center justify-center group-hover:bg-surface-container transition-colors">
                       {user.username.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="absolute inset-0 flex items-center justify-center bg-overlay rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-on-surface" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
@@ -379,20 +379,20 @@ function AppContent() {
               </div>
               <div>
                 <h3 className="font-medium text-lg">{user.username}</h3>
-                <p className="text-gray-400 text-sm">Click the image to change your avatar</p>
+                <p className="text-on-surface-variant text-sm">Click the image to change your avatar</p>
               </div>
             </div>
 
             {/* Status Section */}
             <div>
-              <label className="block text-gray-300 mb-2">Custom Status</label>
+              <label className="block text-on-surface-variant mb-2">Custom Status</label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={customStatus}
                   onChange={(e) => setCustomStatus(e.target.value)}
                   placeholder="Set your status..."
-                  className="flex-1 bg-gray-700 rounded px-3 py-2 text-white"
+                  className="flex-1 bg-surface-variant rounded px-3 py-2 text-on-surface"
                   maxLength={50}
                 />
                 <button
@@ -400,7 +400,7 @@ function AppContent() {
                     updatePresence(customStatus ? { type: 'custom', name: customStatus } : null);
                     setShowProfileSettings(false);
                   }}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  className="px-4 py-2 bg-primary text-on-primary rounded hover:bg-primary-container"
                 >
                   Set
                 </button>
@@ -465,13 +465,13 @@ function AppContent() {
     const getPermissionStatus = (permission) => {
       switch (permission) {
         case 'granted':
-          return { color: 'bg-green-500', text: 'Available', textColor: 'text-green-400' };
+          return { color: 'bg-success', text: 'Available', textColor: 'text-success' };
         case 'denied':
-          return { color: 'bg-red-500', text: 'Blocked', textColor: 'text-red-400' };
+          return { color: 'bg-error', text: 'Blocked', textColor: 'text-error' };
         case 'prompt':
-          return { color: 'bg-yellow-500', text: 'Ask Permission', textColor: 'text-yellow-400' };
+          return { color: 'bg-warning', text: 'Ask Permission', textColor: 'text-warning' };
         default:
-          return { color: 'bg-gray-500', text: 'Unknown', textColor: 'text-gray-400' };
+          return { color: 'bg-surface-container', text: 'Unknown', textColor: 'text-on-surface-variant' };
       }
     };
 
@@ -668,7 +668,7 @@ function AppContent() {
                             console.log('Microphone request button clicked');
                             requestMicrophonePermission();
                           }}
-                          className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
+                          className="px-3 py-1 bg-primary hover:bg-primary-container text-on-primary text-xs rounded transition-colors"
                         >
                           Request
                         </button>
@@ -690,7 +690,7 @@ function AppContent() {
                             console.log('Camera request button clicked');
                             requestCameraPermission();
                           }}
-                          className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
+                          className="px-3 py-1 bg-primary hover:bg-primary-container text-on-primary text-xs rounded transition-colors"
                         >
                           Request
                         </button>
@@ -757,20 +757,20 @@ function AppContent() {
 
               {/* Notifications Settings */}
               <div>
-                <h3 className="text-lg font-semibold text-white mb-4">Notifications</h3>
-                <div className="bg-gray-700/50 rounded-lg p-4 space-y-4">
+                <h3 className="text-lg font-semibold text-on-surface mb-4">Notifications</h3>
+                <div className="bg-surface-variant/50 rounded-lg p-4 space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-300">Desktop Notifications</span>
+                    <span className="text-on-surface-variant">Desktop Notifications</span>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-toggleBackground peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-toggleRing rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-toggleThumb after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-toggleThumb after:border-outline-variant after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-toggleActive"></div>
                     </label>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-300">Sound Notifications</span>
+                    <span className="text-on-surface-variant">Sound Notifications</span>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-toggleBackground peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-toggleRing rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-toggleThumb after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-toggleThumb after:border-outline-variant after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-toggleActive"></div>
                     </label>
                   </div>
                 </div>
@@ -778,20 +778,20 @@ function AppContent() {
 
               {/* Advanced Settings */}
               <div>
-                <h3 className="text-lg font-semibold text-white mb-4">Advanced</h3>
-                <div className="bg-gray-700/50 rounded-lg p-4 space-y-4">
+                <h3 className="text-lg font-semibold text-on-surface mb-4">Advanced</h3>
+                <div className="bg-surface-variant/50 rounded-lg p-4 space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-300">Developer Mode</span>
+                    <span className="text-on-surface-variant">Developer Mode</span>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" />
-                      <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-toggleBackground peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-toggleRing rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-toggleThumb after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-toggleThumb after:border-outline-variant after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-toggleActive"></div>
                     </label>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-300">Hardware Acceleration</span>
+                    <span className="text-on-surface-variant">Hardware Acceleration</span>
                     <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" defaultChecked />
-                      <div className="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-toggleBackground peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-toggleRing rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-toggleThumb after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-toggleThumb after:border-outline-variant after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-toggleActive"></div>
                     </label>
                   </div>
                 </div>
@@ -800,17 +800,17 @@ function AppContent() {
           </div>
 
           {/* Settings Footer */}
-          <div className="p-6 border-t border-gray-700">
+          <div className="p-6 border-t border-outline-variant">
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowSettings(false)}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors"
+                className="px-4 py-2 bg-toggleBackground hover:bg-secondary-container text-on-secondary rounded-lg transition-colors"
               >
                 Close
               </button>
               <button
                 onClick={() => setShowSettings(false)}
-                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+                className="px-4 py-2 bg-primary hover:bg-primary-container text-on-primary rounded-lg transition-colors"
               >
                 Save Changes
               </button>
@@ -828,8 +828,8 @@ function AppContent() {
         case 'playing':
           return (
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-              <span className="text-xs text-green-400">Playing {user.presence.name}</span>
+              <span className="w-2 h-2 rounded-full bg-success"></span>
+              <span className="text-xs text-success">Playing {user.presence.name}</span>
             </div>
           );
         case 'listening':
@@ -842,16 +842,16 @@ function AppContent() {
         default:
           return (
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-              <span className="text-xs text-green-400">Online</span>
+              <span className="w-2 h-2 rounded-full bg-success"></span>
+              <span className="text-xs text-success">Online</span>
             </div>
           );
       }
     }
     return (
       <div className="flex items-center gap-1">
-        <span className="w-2 h-2 rounded-full bg-green-500"></span>
-        <span className="text-xs text-green-400">Online</span>
+        <span className="w-2 h-2 rounded-full bg-success"></span>
+        <span className="text-xs text-success">Online</span>
       </div>
     );
   };
@@ -1014,7 +1014,7 @@ function AppContent() {
           {activeTab === 'servers' && selectedServer && (
             <button 
               onClick={() => setIsUserListCollapsed(!isUserListCollapsed)}
-              className="fixed right-4 top-32 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+              className="fixed right-4 top-32 p-2 bg-surface-variant hover:bg-toggleBackground rounded transition-colors"
               title={isUserListCollapsed ? "Show Users" : "Hide Users"}
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
