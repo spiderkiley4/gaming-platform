@@ -69,6 +69,8 @@
 .bg-secondary { background-color: var(--color-secondary); }
 .bg-secondary-container { background-color: var(--color-secondary-container); }
 
+.border-primary { border-color: var(--color-primary); }
+
 .bg-accent { background-color: var(--color-accent); }
 .bg-accent-container { background-color: var(--color-accent-container); }
 
